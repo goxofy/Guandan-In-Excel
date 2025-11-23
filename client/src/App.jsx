@@ -35,10 +35,15 @@ function App() {
             setSelectedCards([]); // Reset selection
         });
 
+        socket.on('gameError', (msg) => {
+            alert(msg);
+        });
+
         return () => {
             socket.off('connect');
             socket.off('playerJoined');
             socket.off('gameStarted');
+            socket.off('gameError');
         };
     }, []);
 
@@ -68,6 +73,22 @@ function App() {
     };
 
     const handleGridClick = (arg) => {
+        if (gameState && gameState.gameState === 'TRIBUTE') {
+            // Check if it's my turn to pay/return
+            const myAction = gameState.tributePending.find(a => a.from === socket.id);
+            if (myAction) {
+                // arg is card index
+                if (typeof arg === 'number') {
+                    if (myAction.type === 'PAY') {
+                        socket.emit('payTribute', { roomId, cardIndex: arg });
+                    } else {
+                        socket.emit('returnCard', { roomId, cardIndex: arg });
+                    }
+                }
+            }
+            return;
+        }
+
         if (arg === 'PLAY') {
             handlePlay();
         } else if (arg === 'PASS') {
@@ -113,6 +134,40 @@ function App() {
                     selectedCards={selectedCards}
                     onCardClick={handleGridClick}
                 />
+
+                {/* Tribute Modal Overlay */}
+                {gameState && gameState.gameState === 'TRIBUTE' && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white p-6 rounded shadow-lg border border-gray-300">
+                            <h2 className="text-lg font-bold mb-4">进贡/还牌阶段</h2>
+                            {gameState.tributePending.find(a => a.from === socket.id) ? (
+                                <p className="text-red-600 font-bold">
+                                    {gameState.tributePending.find(a => a.from === socket.id).type.includes('PAY') ? '请点击一张最大的牌进贡' : '请点击一张牌还给对方'}
+                                </p>
+                            ) : (
+                                <p className="text-gray-600">等待其他玩家操作...</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Game Over Modal */}
+                {gameState && gameState.gameState === 'GAME_OVER_WIN' && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center">
+                            <h2 className="text-2xl font-bold mb-4 text-[#217346]">游戏结束</h2>
+                            <p className="text-lg mb-6">
+                                恭喜 <span className="font-bold text-red-600">队伍 {gameState.finalWinner}</span> 获胜！
+                            </p>
+                            <button
+                                onClick={handleStart}
+                                className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
+                            >
+                                再来一局
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Status Bar */}

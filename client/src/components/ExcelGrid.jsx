@@ -76,6 +76,26 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             return <span className="text-gray-400 italic">出牌区</span>;
         }
 
+        // Show who played the cards
+        if (cellId === 'D5' && gameState && gameState.tableCards && gameState.tableCards.length > 0 && gameState.lastPlayedHand) {
+            const playerId = gameState.lastPlayedHand.playerId;
+            const player = gameState.players.find(p => p.id === playerId);
+            if (player) {
+                let label = player.name;
+                // Determine relative position
+                if (playerId === myPlayerId) label = "我";
+                else {
+                    const pIndex = player.index;
+                    const mIndex = myIndex !== -1 ? myIndex : 0;
+                    const diff = (pIndex - mIndex + 4) % 4;
+                    if (diff === 1) label = "下家 (右)";
+                    else if (diff === 2) label = "对家 (上)";
+                    else if (diff === 3) label = "上家 (左)";
+                }
+                return <span className="text-gray-500 text-[10px]">[{label}] 打出:</span>;
+            }
+        }
+
         return null;
     };
 
