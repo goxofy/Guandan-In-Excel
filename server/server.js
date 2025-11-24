@@ -161,7 +161,7 @@ io.on('connection', (socket) => {
 
         // Check turn
         if (room.players[room.turnIndex].id !== socket.id) {
-            socket.emit('error', 'Not your turn');
+            socket.emit('gameError', 'Not your turn');
             return;
         }
 
@@ -169,33 +169,63 @@ io.on('connection', (socket) => {
         if (!cardIndices || cardIndices.length === 0) return;
 
         // Get actual cards
-        const playedCards = cardIndices.map(idx => player.hand[idx]);
+        const hand = player.hand;
+        const cardsToPlay = [];
+        // Sort indices descending to remove from back
+        const sortedIndices = [...cardIndices].sort((a, b) => b - a);
 
-        // Validate hand type using GuandanLogic
-        const validationResult = GuandanLogic.validateHand(playedCards, room.currentLevelRank);
+        for (let idx of sortedIndices) {
+            if (idx < 0 || idx >= hand.length) {
+                socket.emit('gameError', 'Invalid card index');
+                return;
+            }
+            cardsToPlay.push(hand[idx]);
+        }
+        // Reverse back to match selection order if needed, but validation handles it
+        // Actually GuandanLogic expects cards, order matters for some checks? 
+        // Usually we sort cards by rank before validating.
+
+        // Validate Hand
+        const validationResult = GuandanLogic.validateHand(cardsToPlay, room.currentLevelRank);
         if (!validationResult.isValid) {
-            socket.emit('error', 'Invalid hand type');
+            socket.emit('gameError', 'Invalid hand type');
             return;
         }
 
-        // Validate if hand beats previous hand
-        if (room.lastPlayedHand && room.lastPlayedHand.playerId !== socket.id) {
-            // If I am not the last one who played (i.e. not a new round started by me after everyone passed)
-            // Check if my hand beats the last hand
-            if (!GuandanLogic.compareHands(validationResult, room.lastPlayedHand, room.currentLevelRank)) {
-                socket.emit('error', 'Your hand is not big enough');
+        // Compare with last played hand
+        if (room.lastPlayedHand) {
+            // Check if we can beat it
+            // Must be same type (or bomb/rocket)
+            // And bigger
+            const comparison = GuandanLogic.compareHands(validationResult, room.lastPlayedHand, room.currentLevelRank);
+            if (!comparison) {
+                socket.emit('gameError', 'Your hand is not big enough');
                 return;
             }
         }
 
+        // Play is valid
         // Remove cards from hand
-        const indicesToRemove = new Set(cardIndices);
-        player.hand = player.hand.filter((_, idx) => !indicesToRemove.has(idx));
+        for (let idx of sortedIndices) {
+            player.hand.splice(idx, 1);
+        }
 
-        // Update table cards and game state
-        room.tableCards = playedCards;
-        room.lastPlayedHand = { ...validationResult, playerId: socket.id };
+        // Update room state
+        room.lastPlayedHand = {
+            playerId: player.id,
+            ...validationResult,
+            cards: cardsToPlay // Store actual cards for display
+        };
+        room.tableCards = cardsToPlay; // For legacy/simple display
         room.passCount = 0; // Reset pass count
+
+        // Update roundPlays
+        if (!room.roundPlays) room.roundPlays = {};
+        room.roundPlays[player.id] = { type: 'PLAY', cards: cardsToPlay };
+
+        // Check for Game Over / Team Finish
+        // ... (existing logic) ...
+
 
         // Check if player finished
         if (player.hand.length === 0) {
@@ -338,6 +368,13 @@ io.on('connection', (socket) => {
 
         room.passCount = (room.passCount || 0) + 1;
 
+        // Update roundPlays
+        if (!room.roundPlays) room.roundPlays = {};
+        const player = room.players.find(p => p.id === socket.id);
+        if (player) {
+            room.roundPlays[player.id] = { type: 'PASS' };
+        }
+
         // Calculate needed passes to end round
         const activePlayers = room.players.filter(p => p.hand.length > 0);
         const activeCount = activePlayers.length;
@@ -360,6 +397,7 @@ io.on('connection', (socket) => {
             room.lastPlayedHand = null;
             room.tableCards = [];
             room.passCount = 0;
+            room.roundPlays = {}; // Clear round plays for new round
 
             if (winner) {
                 if (winner.hand.length > 0) {
