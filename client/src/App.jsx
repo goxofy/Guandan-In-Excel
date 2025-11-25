@@ -3,7 +3,8 @@ import Ribbon from './components/Ribbon';
 import ExcelGrid from './components/ExcelGrid';
 import { io } from 'socket.io-client';
 
-const socket = io('http://localhost:3001');
+const socketUrl = import.meta.env.PROD ? '/' : 'http://localhost:3001';
+const socket = io(socketUrl);
 
 function App() {
     const [connected, setConnected] = useState(false);
