@@ -41,7 +41,7 @@ io.on('connection', (socket) => {
         socket.emit('roomCreated', roomId);
     });
 
-    socket.on('joinRoom', ({ roomId, playerName }) => {
+    socket.on('joinRoom', ({ roomId, playerName, userId }) => {
         let room = rooms.get(roomId);
         if (!room) {
             // Auto-create room if it doesn't exist
@@ -58,24 +58,42 @@ io.on('connection', (socket) => {
             console.log(`Auto-created room ${roomId}`);
         }
 
-        if (room.players.length >= 4) {
-            socket.emit('error', 'Room is full');
+        // Check if player is already in room (by userId)
+        const existingPlayerByUserId = room.players.find(p => p.userId === userId);
+
+        if (existingPlayerByUserId) {
+            // Reconnection!
+            console.log(`Player ${userId} reconnected`);
+            existingPlayerByUserId.id = socket.id; // Update socket ID
+            existingPlayerByUserId.connected = true;
+
+            socket.join(roomId);
+
+            // Send current state to reconnecting player
+            socket.emit('gameStarted', {
+                ...room,
+                myHand: existingPlayerByUserId.hand,
+                players: room.players.map(op => ({ ...op, hand: op.id === existingPlayerByUserId.id ? op.hand : op.hand.length }))
+            });
+
+            // Notify others
+            io.to(roomId).emit('playerJoined', room.players);
             return;
         }
 
-        // Check if player already in room (reconnect)
-        const existingPlayer = room.players.find(p => p.id === socket.id);
-        if (existingPlayer) {
-            socket.emit('gameState', room);
+        if (room.players.length >= 4) {
+            socket.emit('gameError', '房间已满 (Room is full)');
             return;
         }
 
         const player = {
             id: socket.id,
+            userId: userId, // Store persistent ID
             name: playerName || `Player ${room.players.length + 1}`,
             index: room.players.length,
             hand: [],
-            team: room.players.length % 2 === 0 ? 'A' : 'B' // 0&2 vs 1&3
+            team: room.players.length % 2 === 0 ? 'A' : 'B', // 0&2 vs 1&3
+            connected: true
         };
 
         room.players.push(player);
@@ -585,22 +603,15 @@ io.on('connection', (socket) => {
         console.log('User disconnected:', socket.id);
         // Find room user was in
         for (const [roomId, room] of rooms.entries()) {
-            const playerIndex = room.players.findIndex(p => p.id === socket.id);
-            if (playerIndex !== -1) {
-                room.players.splice(playerIndex, 1);
-                // Re-assign indices/teams? For MVP, just leave gaps or shift?
-                // Shifting is safer for now.
-                room.players.forEach((p, i) => {
-                    p.index = i;
-                    p.team = i % 2 === 0 ? 'A' : 'B';
-                });
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) {
+                player.connected = false;
+                console.log(`Player ${player.userId} disconnected from room ${roomId}`);
 
-                io.to(roomId).emit('playerJoined', room.players); // Broadcast update
-                console.log(`Removed player from room ${roomId}`);
+                // Do NOT remove player, just mark as disconnected
+                // room.players.splice(playerIndex, 1);
 
-                if (room.players.length === 0) {
-                    rooms.delete(roomId);
-                }
+                io.to(roomId).emit('playerJoined', room.players); // Broadcast update (to show offline status if UI supports it)
                 break;
             }
         }

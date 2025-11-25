@@ -1,0 +1,11 @@
+{
+    "name": "guandan-excel-root",
+    "version": "1.0.0",
+    "description": "Root for Guandan Excel project automation",
+    "scripts": {
+        "test:sim": "node scripts/simulate_game.js"
+    },
+    "dependencies": {
+        "socket.io-client": "^4.8.1"
+    }
+}

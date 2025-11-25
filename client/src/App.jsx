@@ -14,6 +14,16 @@ function App() {
     const [myPlayerId, setMyPlayerId] = useState(null);
     const [roomId, setRoomId] = useState('room1'); // Default room for now
 
+    // Persistent User ID
+    const [userId, setUserId] = useState(() => {
+        let stored = localStorage.getItem('guandan_userId');
+        if (!stored) {
+            stored = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('guandan_userId', stored);
+        }
+        return stored;
+    });
+
     useEffect(() => {
         socket.on('connect', () => {
             setConnected(true);
@@ -50,7 +60,7 @@ function App() {
 
     const handleJoin = () => {
         console.log('handleJoin called');
-        socket.emit('joinRoom', { roomId, playerName: 'Me' });
+        socket.emit('joinRoom', { roomId, playerName: 'Me', userId });
     };
 
     const handleStart = () => {
