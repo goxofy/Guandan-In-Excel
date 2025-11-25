@@ -54,7 +54,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           tags: |
-            ${{ env.GITHUB_CR_REPO }}
+            ${{ steps.meta.outputs.tags }}
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -110,7 +110,7 @@ jobs:
           tags=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           if [ -z "$tags" ]; then
             echo "DOCKER_METADATA_OUTPUT_VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-            tags="-t ${{ env.GITHUB_CR_REPO }}:${{ github.ref_name }}"
+            tags="-t ${{ steps.meta.outputs.tags }}:${{ github.ref_name }}"
           fi
           echo "DOCKER_METADATA_TAGS=$tags" >> $GITHUB_ENV
 
@@ -118,8 +118,8 @@ jobs:
         working-directory: ${{ runner.temp }}/digests
         run: |
           docker buildx imagetools create ${{ env.DOCKER_METADATA_TAGS }} \
-            $(printf '${{ env.GITHUB_CR_REPO }}@sha256:%s ' *)
+            $(printf '${{ steps.meta.outputs.tags }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.GITHUB_CR_REPO }}:${{ env.DOCKER_METADATA_OUTPUT_VERSION }}
+          docker buildx imagetools inspect ${{ steps.meta.outputs.tags }}:${{ env.DOCKER_METADATA_OUTPUT_VERSION }}
