@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Play, LogIn, RefreshCw, Save, Clipboard, Scissors, Copy } from 'lucide-react';
+import { Play, LogIn, RefreshCw, Save, Clipboard, Scissors, Copy, User } from 'lucide-react';
 
-const Ribbon = ({ onJoin, onStart, onPlay }) => {
+const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer }) => {
     const [activeTab, setActiveTab] = useState('开始');
 
     const tabs = ['文件', '开始', '插入', '页面布局', '公式', '数据', '审阅', '视图', '帮助'];
@@ -46,6 +46,10 @@ const Ribbon = ({ onJoin, onStart, onPlay }) => {
                                 <button onClick={() => { console.log('Join button clicked'); onJoin(); }} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="加入房间">
                                     <LogIn size={24} className="text-blue-600" />
                                     <span className="text-[10px]">加入</span>
+                                </button>
+                                <button onClick={onSinglePlayer} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="单人模式">
+                                    <User size={24} className="text-purple-600" />
+                                    <span className="text-[10px]">单人</span>
                                 </button>
                                 <button onClick={onStart} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="开始游戏">
                                     <Play size={24} className="text-green-600" />

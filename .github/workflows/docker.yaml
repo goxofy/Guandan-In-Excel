@@ -9,11 +9,9 @@ on:
     paths-ignore:
       - .github/**
 
-env:
-  GITHUB_CR_REPO: ghcr.io/${{ github.repository }}
-
 jobs:
   build:
+    name: Build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -22,17 +20,25 @@ jobs:
           - linux/amd64
           - linux/arm64
     steps:
-      - name: Prepare
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 1. 强制转小写，解决 invalid tag repository name must be lowercase
+      - name: Lowercase Repo Name
         run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GITHUB_CR_REPO }}
+          images: ghcr.io/${{ env.IMAGE_NAME }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -41,21 +47,19 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
+          context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          tags: |
-            ${{ env.GITHUB_CR_REPO }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          # 【修正点】必须加回来，否则报错 tag is needed
+          tags: ${{ steps.meta.outputs.tags }}
+          # 【核心配置】push-by-digest=true 告诉它只推 blob 不更新 tag 指针
+          outputs: type=image,name-canonical=true,push=true
+          # 【关键】禁用 provenance 防止 manifest 冲突
+          provenance: false
 
       - name: Export digest
         run: |
@@ -66,29 +70,25 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
     runs-on: ubuntu-latest
-    needs:
-      - build
+    needs: build
     steps:
+      - name: Lowercase Repo Name
+        run: |
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-*
           merge-multiple: true
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -97,29 +97,27 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GITHUB_CR_REPO }}
+          images: ghcr.io/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Docker tags
-        run: |
-          tags=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          if [ -z "$tags" ]; then
-            echo "DOCKER_METADATA_OUTPUT_VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-            tags="-t ${{ env.GITHUB_CR_REPO }}:${{ github.ref_name }}"
-          fi
-          echo "DOCKER_METADATA_TAGS=$tags" >> $GITHUB_ENV
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         run: |
-          docker buildx imagetools create ${{ env.DOCKER_METADATA_TAGS }} \
-            $(printf '${{ env.GITHUB_CR_REPO }}@sha256:%s ' *)
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.GITHUB_CR_REPO }}:${{ env.DOCKER_METADATA_OUTPUT_VERSION }}
+          docker buildx imagetools inspect ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}

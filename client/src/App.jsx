@@ -14,6 +14,8 @@ function App() {
     const [myPlayerId, setMyPlayerId] = useState(null);
     const [roomId, setRoomId] = useState('room1'); // Default room for now
 
+    const [errorMsg, setErrorMsg] = useState(null); // State for error modal
+
     // Persistent User ID
     const [userId, setUserId] = useState(() => {
         let stored = localStorage.getItem('guandan_userId');
@@ -24,10 +26,25 @@ function App() {
         return stored;
     });
 
+    const roomIdRef = useRef(roomId); // Ref to track current roomId
+
+    useEffect(() => {
+        roomIdRef.current = roomId;
+    }, [roomId]);
+
     useEffect(() => {
         socket.on('connect', () => {
             setConnected(true);
             setMyPlayerId(socket.id);
+
+            // Auto-rejoin logic
+            const currentRoomId = roomIdRef.current;
+            const storedUserId = localStorage.getItem('guandan_userId');
+
+            if (currentRoomId && storedUserId) {
+                console.log('Auto-rejoining room:', currentRoomId);
+                socket.emit('joinRoom', { roomId: currentRoomId, playerName: 'Me', userId: storedUserId });
+            }
         });
 
         socket.on('playerJoined', (players) => {
@@ -46,14 +63,37 @@ function App() {
             setSelectedCards([]); // Reset selection
         });
 
+        socket.on('gameEnded', (data) => {
+            console.log('Game Ended:', data);
+            if (data.finalWinner) {
+                setGameState(prev => ({
+                    ...prev,
+                    gameState: 'GAME_OVER_WIN',
+                    finalWinner: data.finalWinner,
+                    rankings: data.rankings,
+                    teamLevels: data.teamLevels
+                }));
+            } else {
+                setGameState(prev => ({
+                    ...prev,
+                    gameState: 'ROUND_ENDED',
+                    levelJump: data.levelJump,
+                    nextLevel: data.nextLevel,
+                    teamLevels: data.teamLevels,
+                    rankings: data.rankings
+                }));
+            }
+        });
+
         socket.on('gameError', (msg) => {
-            alert(msg);
+            setErrorMsg(msg); // Show custom modal instead of alert
         });
 
         return () => {
             socket.off('connect');
             socket.off('playerJoined');
             socket.off('gameStarted');
+            socket.off('gameEnded');
             socket.off('gameError');
         };
     }, []);
@@ -118,6 +158,12 @@ function App() {
         }
     };
 
+    const handleSinglePlayer = () => {
+        const spRoomId = 'sp_' + Math.random().toString(36).substr(2, 6);
+        setRoomId(spRoomId);
+        socket.emit('createSinglePlayerRoom', spRoomId);
+    };
+
     return (
         <div className="flex flex-col h-screen w-screen bg-gray-100 overflow-hidden font-sans text-xs">
             {/* Excel Title Bar (Fake) */}
@@ -134,7 +180,7 @@ function App() {
                 </div>
             </div>
 
-            <Ribbon onJoin={handleJoin} onStart={handleStart} onPlay={handlePlay} />
+            <Ribbon onJoin={handleJoin} onStart={handleStart} onPlay={handlePlay} onSinglePlayer={handleSinglePlayer} />
 
             <div className="flex-1 overflow-auto relative">
                 <ExcelGrid
@@ -162,19 +208,59 @@ function App() {
                     </div>
                 )}
 
-                {/* Game Over Modal */}
+                {/* Round Ended Modal (Level Up) */}
+                {gameState && gameState.gameState === 'ROUND_ENDED' && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center min-w-[300px]">
+                            <h2 className="text-xl font-bold mb-4 text-[#217346]">本局结束</h2>
+                            <div className="mb-6 text-left">
+                                <p className="mb-2">赢家升级: <span className="font-bold text-red-600">+{gameState.levelJump} 级</span></p>
+                                <p className="mb-2">下局打: <span className="font-bold text-blue-600">{gameState.nextLevel}</span></p>
+                                <div className="mt-4 border-t pt-2">
+                                    <p className="text-gray-600 font-bold">当前等级:</p>
+                                    <p>A队: {gameState.teamLevels['A']}</p>
+                                    <p>B队: {gameState.teamLevels['B']}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleStart}
+                                className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41] w-full"
+                            >
+                                继续 (进入进贡)
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Game Over Modal (Final Victory) */}
                 {gameState && gameState.gameState === 'GAME_OVER_WIN' && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
                         <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center">
-                            <h2 className="text-2xl font-bold mb-4 text-[#217346]">游戏结束</h2>
+                            <h2 className="text-2xl font-bold mb-4 text-[#217346]">游戏通关！</h2>
                             <p className="text-lg mb-6">
-                                恭喜 <span className="font-bold text-red-600">队伍 {gameState.finalWinner}</span> 获胜！
+                                恭喜 <span className="font-bold text-red-600">队伍 {gameState.finalWinner}</span> 率先打过A级！
                             </p>
                             <button
                                 onClick={handleStart}
                                 className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
                             >
-                                再来一局
+                                重新开始
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Error Modal */}
+                {errorMsg && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white p-6 rounded shadow-lg border border-gray-300 text-center min-w-[250px]">
+                            <h2 className="text-lg font-bold mb-4 text-red-600">提示</h2>
+                            <p className="mb-6 text-gray-700">{errorMsg}</p>
+                            <button
+                                onClick={() => setErrorMsg(null)}
+                                className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
+                            >
+                                确定
                             </button>
                         </div>
                     </div>

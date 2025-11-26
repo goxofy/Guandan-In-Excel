@@ -16,9 +16,11 @@ const io = new Server(server, {
 });
 
 const GuandanLogic = require('./game/GuandanLogic');
+const BotManager = require('./game/BotManager');
 
 // Simple in-memory storage
 const rooms = new Map();
+const botManagers = new Map(); // roomId -> BotManager
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
@@ -39,6 +41,76 @@ io.on('connection', (socket) => {
             turnIndex: 0
         });
         socket.emit('roomCreated', roomId);
+    });
+
+    socket.on('createSinglePlayerRoom', (roomId) => {
+        if (rooms.has(roomId)) {
+            socket.emit('error', 'Room already exists');
+            return;
+        }
+        // Initialize room
+        const room = {
+            id: roomId,
+            players: [],
+            gameState: 'WAITING',
+            currentLevelRank: '2',
+            deck: [],
+            tableCards: [],
+            turnIndex: 0
+        };
+        rooms.set(roomId, room);
+
+        // Add Human Player
+        const humanPlayer = {
+            id: socket.id,
+            userId: 'human_' + socket.id, // Temporary ID for SP
+            name: 'You',
+            index: 0,
+            hand: [],
+            team: 'A',
+            connected: true
+        };
+        room.players.push(humanPlayer);
+        socket.join(roomId);
+
+        // Add 3 Bots
+        const botManager = new BotManager(io, room);
+        botManagers.set(roomId, botManager);
+
+        for (let i = 1; i <= 3; i++) {
+            const botId = `bot_${roomId}_${i}`;
+            const botName = `Bot ${i}`;
+            const botPlayer = {
+                id: botId,
+                userId: botId,
+                name: botName,
+                index: i,
+                hand: [],
+                team: i % 2 === 0 ? 'A' : 'B',
+                connected: true,
+                isBot: true
+            };
+            room.players.push(botPlayer);
+            botManager.addBot(botId, botName, i);
+        }
+
+        // Setup Bot Callbacks
+        botManager.onBotMove = (botId, cardIndices) => {
+            handlePlayCards(roomId, botId, cardIndices);
+        };
+        botManager.onBotPass = (botId) => {
+            handlePassTurn(roomId, botId);
+        };
+        botManager.onBotPayTribute = (botId, cardIndex) => {
+            handlePayTribute(roomId, botId, cardIndex);
+        };
+        botManager.onBotReturnCard = (botId, cardIndex) => {
+            handleReturnCard(roomId, botId, cardIndex);
+        };
+
+        // Start Game Immediately
+        io.to(roomId).emit('playerJoined', room.players);
+        startGame(roomId);
     });
 
     socket.on('joinRoom', ({ roomId, playerName, userId }) => {
@@ -107,11 +179,18 @@ io.on('connection', (socket) => {
     });
 
     socket.on('startGame', (roomId) => {
+        startGame(roomId);
+    });
+
+    // Helper to start game (extracted for reuse)
+    function startGame(roomId) {
         const room = rooms.get(roomId);
         if (!room) return;
 
+        // If manual start, check player count
+        // For SP, we already filled with bots
         if (room.players.length < 4) {
-            socket.emit('error', 'Need 4 players to start');
+            // socket.emit('error', 'Need 4 players to start'); // No socket here easily
             return;
         }
 
@@ -162,25 +241,31 @@ io.on('connection', (socket) => {
 
         // Emit game state
         room.players.forEach(p => {
-            io.to(p.id).emit('gameStarted', {
-                ...room,
-                myHand: p.hand,
-                players: room.players.map(op => ({ ...op, hand: op.id === p.id ? op.hand : op.hand.length }))
-            });
+            if (!p.isBot) {
+                io.to(p.id).emit('gameStarted', {
+                    ...room,
+                    myHand: p.hand,
+                    players: room.players.map(op => ({ ...op, hand: op.id === p.id ? op.hand : op.hand.length }))
+                });
+            }
         });
         broadcastGameState(room);
-    });
+    }
 
     socket.on('playCards', ({ roomId, cardIndices }) => {
+        handlePlayCards(roomId, socket.id, cardIndices);
+    });
+
+    function handlePlayCards(roomId, playerId, cardIndices) {
         const room = rooms.get(roomId);
         if (!room || room.gameState !== 'PLAYING') return;
 
-        const player = room.players.find(p => p.id === socket.id);
+        const player = room.players.find(p => p.id === playerId);
         if (!player) return;
 
         // Check turn
-        if (room.players[room.turnIndex].id !== socket.id) {
-            socket.emit('gameError', 'Not your turn');
+        if (room.players[room.turnIndex].id !== playerId) {
+            if (!player.isBot) socket.emit('gameError', 'Not your turn');
             return;
         }
 
@@ -195,30 +280,24 @@ io.on('connection', (socket) => {
 
         for (let idx of sortedIndices) {
             if (idx < 0 || idx >= hand.length) {
-                socket.emit('gameError', 'Invalid card index');
+                if (!player.isBot) socket.emit('gameError', 'Invalid card index');
                 return;
             }
             cardsToPlay.push(hand[idx]);
         }
-        // Reverse back to match selection order if needed, but validation handles it
-        // Actually GuandanLogic expects cards, order matters for some checks? 
-        // Usually we sort cards by rank before validating.
 
         // Validate Hand
         const validationResult = GuandanLogic.validateHand(cardsToPlay, room.currentLevelRank);
         if (!validationResult.isValid) {
-            socket.emit('gameError', 'Invalid hand type');
+            if (!player.isBot) socket.emit('gameError', 'Invalid hand type');
             return;
         }
 
         // Compare with last played hand
         if (room.lastPlayedHand) {
-            // Check if we can beat it
-            // Must be same type (or bomb/rocket)
-            // And bigger
             const comparison = GuandanLogic.compareHands(validationResult, room.lastPlayedHand, room.currentLevelRank);
             if (!comparison) {
-                socket.emit('gameError', 'Your hand is not big enough');
+                if (!player.isBot) socket.emit('gameError', 'Your hand is not big enough');
                 return;
             }
         }
@@ -233,28 +312,19 @@ io.on('connection', (socket) => {
         room.lastPlayedHand = {
             playerId: player.id,
             ...validationResult,
-            cards: cardsToPlay // Store actual cards for display
+            cards: cardsToPlay
         };
-        room.tableCards = cardsToPlay; // For legacy/simple display
-        room.passCount = 0; // Reset pass count
+        room.tableCards = cardsToPlay;
+        room.passCount = 0;
 
         // Update roundPlays
         if (!room.roundPlays) room.roundPlays = {};
         room.roundPlays[player.id] = { type: 'PLAY', cards: cardsToPlay };
 
-        // Check for Game Over / Team Finish
-        // ... (existing logic) ...
-
-
         // Check if player finished
         if (player.hand.length === 0) {
-            // Record ranking
-            if (!room.rankings) room.rankings = []; // Should be initialized already, but good for safety
+            if (!room.rankings) room.rankings = [];
             room.rankings.push(player.id);
-
-            // Check if game over (3 players finished, or 2 players from same team finished?)
-            // Simple rule: 3 players finished -> Game Over.
-            // Or: Team A finished (both players) -> Game Over.
 
             const teamA = room.players.filter(p => p.team === 'A');
             const teamB = room.players.filter(p => p.team === 'B');
@@ -263,59 +333,31 @@ io.on('connection', (socket) => {
 
             if (room.rankings.length === 3 || teamAFinished || teamBFinished) {
                 // Game Over
-                // Add last player to rankings if not already
-                const lastPlayer = room.players.find(p => !room.rankings.includes(p.id));
-                if (lastPlayer) room.rankings.push(lastPlayer.id);
+                // Add all remaining players to rankings
+                const remainingPlayers = room.players.filter(p => !room.rankings.includes(p.id));
+                // Sort remaining players? No, they are losers. Order doesn't matter for 3rd/4th usually, 
+                // but for tribute, we need to know who is last.
+                // If team finished, the other team are losers.
+                // Just push them.
+                remainingPlayers.forEach(p => room.rankings.push(p.id));
 
-                // Calculate Level Up
                 const p1 = room.players.find(p => p.id === room.rankings[0]);
                 const p2 = room.players.find(p => p.id === room.rankings[1]);
                 const p3 = room.players.find(p => p.id === room.rankings[2]);
-                // const p4 = room.players.find(p => p.id === room.rankings[3]);
 
                 let levelJump = 0;
                 let winningTeam = p1.team;
 
-                if (p1.team === p2.team) {
-                    // Double Victory (1st & 2nd)
-                    levelJump = 3;
-                } else if (p1.team === p3.team) {
-                    // Single Victory (1st & 3rd)
-                    levelJump = 2;
-                } else {
-                    // 1st & 4th
-                    levelJump = 1;
-                }
+                if (p1.team === p2.team) levelJump = 3;
+                else if (p1.team === p3.team) levelJump = 2;
+                else levelJump = 1;
 
-                // Update Level
-                // Map ranks to values: 2->2 ... A->14
                 const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-                let currentVal = ranks.indexOf(room.currentLevelRank) + 2;
-
-                // Who levels up? The winning team.
-                // But room.currentLevelRank is global?
-                // Actually, level belongs to the team.
-                // For MVP, let's assume we track level for the room (current active level).
-                // If winning team matches current level holder?
-                // Wait, usually:
-                // Team A is on Level 2. Team B is on Level 2.
-                // If Team A wins, they go to Level 2 + Jump.
-                // Next game plays Team A's level.
-                // We need to track level per team.
-
-                if (!room.teamLevels) {
-                    room.teamLevels = { 'A': 2, 'B': 2 }; // Start at 2
-                }
-
-                // Update winner's level
+                if (!room.teamLevels) room.teamLevels = { 'A': 2, 'B': 2 };
                 room.teamLevels[winningTeam] += levelJump;
 
-                // Check Win Condition (Pass A)
-                // If level > 14 (A), they win the game?
-                // Or must play A and win?
-                // "First team to pass level A wins" -> Level > 14.
                 if (room.teamLevels[winningTeam] > 14) {
-                    room.gameState = 'GAME_OVER_WIN'; // Final Victory
+                    room.gameState = 'GAME_OVER_WIN';
                     io.to(roomId).emit('gameEnded', {
                         rankings: room.rankings,
                         finalWinner: winningTeam,
@@ -324,21 +366,9 @@ io.on('connection', (socket) => {
                     return;
                 }
 
-                // Set next game level
                 const nextLevelVal = room.teamLevels[winningTeam];
-                // Map back to rank
-                // 2->0, 14->12.
-                // If > 14, cap at A (but we handled win above).
-                // If jump makes it > 14? e.g. 13 (K) + 3 = 16.
-                // If they were at K, and jump 3, they pass A and win.
-                // So check above covers it.
-
-                // If they are at A (14), they play A.
-                // If they win at A, they pass A (14+jump > 14).
-
                 let nextRankIndex = nextLevelVal - 2;
-                if (nextRankIndex >= ranks.length) nextRankIndex = ranks.length - 1; // Should not happen if win check works
-
+                if (nextRankIndex >= ranks.length) nextRankIndex = ranks.length - 1;
                 room.currentLevelRank = ranks[nextRankIndex];
 
                 room.gameState = 'ENDED';
@@ -348,13 +378,11 @@ io.on('connection', (socket) => {
                     nextLevel: room.currentLevelRank,
                     teamLevels: room.teamLevels
                 });
-                return; // Stop here
+                return;
             }
         }
 
         // Move turn
-        // If current player finished, turn goes to next.
-        // But if next player also finished, skip.
         let nextTurnIndex = (room.turnIndex + 1) % 4;
         let loopCount = 0;
         while (room.players[nextTurnIndex].hand.length === 0 && loopCount < 4) {
@@ -364,24 +392,28 @@ io.on('connection', (socket) => {
         room.turnIndex = nextTurnIndex;
 
         broadcastGameState(room);
+    }
+
+    socket.on('passTurn', ({ roomId }) => {
+        handlePassTurn(roomId, socket.id);
     });
 
-    socket.on('passTurn', ({ roomId }) => { // Destructure roomId
+    function handlePassTurn(roomId, playerId) {
         const room = rooms.get(roomId);
-        if (!room) {
-            socket.emit('gameError', 'Room not found - Please refresh/rejoin');
-            return;
-        }
+        if (!room) return;
+
+        const player = room.players.find(p => p.id === playerId);
+        if (!player) return;
 
         // Check if it's player's turn
-        if (room.players[room.turnIndex].id !== socket.id) {
-            socket.emit('gameError', 'Not your turn');
+        if (room.players[room.turnIndex].id !== playerId) {
+            if (!player.isBot) socket.emit('gameError', 'Not your turn');
             return;
         }
 
         // Cannot pass if it's a free play (you must play)
-        if (!room.lastPlayedHand || room.lastPlayedHand.playerId === socket.id) {
-            socket.emit('gameError', 'Cannot pass on free turn');
+        if (!room.lastPlayedHand || room.lastPlayedHand.playerId === playerId) {
+            if (!player.isBot) socket.emit('gameError', 'Cannot pass on free turn');
             return;
         }
 
@@ -389,10 +421,7 @@ io.on('connection', (socket) => {
 
         // Update roundPlays
         if (!room.roundPlays) room.roundPlays = {};
-        const player = room.players.find(p => p.id === socket.id);
-        if (player) {
-            room.roundPlays[player.id] = { type: 'PASS' };
-        }
+        room.roundPlays[player.id] = { type: 'PASS' };
 
         // Calculate needed passes to end round
         const activePlayers = room.players.filter(p => p.hand.length > 0);
@@ -462,26 +491,37 @@ io.on('connection', (socket) => {
         }
 
         broadcastGameState(room);
-    });
+    }
 
     function broadcastGameState(room) {
+        // Notify BotManager
+        if (botManagers.has(room.id)) {
+            botManagers.get(room.id).onGameStateUpdate();
+        }
+
         room.players.forEach(p => {
-            io.to(p.id).emit('gameStarted', {
-                ...room,
-                myHand: p.hand,
-                players: room.players.map(op => ({ ...op, hand: op.id === p.id ? op.hand : op.hand.length }))
-            });
+            if (!p.isBot) {
+                io.to(p.id).emit('gameStarted', {
+                    ...room,
+                    myHand: p.hand,
+                    players: room.players.map(op => ({ ...op, hand: op.id === p.id ? op.hand : op.hand.length }))
+                });
+            }
         });
     }
 
     socket.on('payTribute', ({ roomId, cardIndex }) => {
+        handlePayTribute(roomId, socket.id, cardIndex);
+    });
+
+    function handlePayTribute(roomId, playerId, cardIndex) {
         const room = rooms.get(roomId);
         if (!room || room.gameState !== 'TRIBUTE') return;
 
         // Find pending action
-        const actionIndex = room.tributePending.findIndex(a => a.from === socket.id && (a.type === 'PAY' || a.type === 'PAY_DOUBLE'));
+        const actionIndex = room.tributePending.findIndex(a => a.from === playerId && (a.type === 'PAY' || a.type === 'PAY_DOUBLE'));
         if (actionIndex === -1) {
-            socket.emit('error', 'No tribute required from you');
+            // socket.emit('error', 'No tribute required from you'); // Bot doesn't listen to socket
             return;
         }
         const action = room.tributePending[actionIndex];
@@ -556,15 +596,19 @@ io.on('connection', (socket) => {
         }
 
         broadcastGameState(room);
-    });
+    }
 
     socket.on('returnCard', ({ roomId, cardIndex }) => {
+        handleReturnCard(roomId, socket.id, cardIndex);
+    });
+
+    function handleReturnCard(roomId, playerId, cardIndex) {
         const room = rooms.get(roomId);
         if (!room || room.gameState !== 'TRIBUTE') return;
 
-        const actionIndex = room.tributePending.findIndex(a => a.from === socket.id && a.type === 'RETURN');
+        const actionIndex = room.tributePending.findIndex(a => a.from === playerId && a.type === 'RETURN');
         if (actionIndex === -1) {
-            socket.emit('error', 'No return required from you');
+            // socket.emit('error', 'No return required from you');
             return;
         }
         const action = room.tributePending[actionIndex];
@@ -597,7 +641,7 @@ io.on('connection', (socket) => {
         }
 
         broadcastGameState(room);
-    });
+    }
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);

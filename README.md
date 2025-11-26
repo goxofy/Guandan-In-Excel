@@ -1,68 +1,70 @@
-# Excel-style Guandan Web App (掼蛋 - 摸鱼神器)
+# Excel 风格掼蛋 Web 应用 (掼蛋 - 摸鱼神器)
 
-A web-based Guandan (掼蛋) card game disguised as an Excel spreadsheet, perfect for discreet gameplay.
+一个伪装成 Excel 表格的网页版掼蛋游戏，完美适合上班摸鱼。
 
-## Features
+## 功能特性
 
-*   **Excel Disguise**: The UI mimics Microsoft Excel to avoid detection.
-*   **Full Game Logic**: Supports all core Guandan rules including:
-    *   Single, Pair, Triplet, Bomb, Straight, Tube (3 consecutive pairs), Plate (2 consecutive triplets), Straight Flush, King Bomb.
-    *   **Ghost Card (逢人配)**: Heart Level Card acts as a wildcard.
-    *   **Tribute (进贡)**: Single and Double Tribute logic with Return (还牌).
-    *   **Level Progression (升级)**: Double Victory (+3), Single Victory (+2), Keep (+1).
-    *   **Jiefeng (接风)**: Partner leads if winner finishes.
-*   **Multiplayer**: Supports 4 players per room via Socket.io.
+*   **Excel 伪装**: 界面完美模仿 Microsoft Excel，老板路过也看不出你在玩游戏。
+*   **完整游戏逻辑**: 支持所有核心掼蛋规则，包括：
+    *   单张、对子、三张、炸弹、顺子、木板（三连对）、钢板（二连三）、同花顺、王炸。
+    *   **逢人配 (Ghost Card)**: 红桃级牌可作为百搭牌使用。
+    *   **进贡 (Tribute)**: 支持单贡、双贡以及抗贡逻辑，包含还牌环节。
+    *   **升级 (Level Progression)**: 双下 (+3级), 单下 (+2级), 保级 (+1级)。
+    *   **接风 (Jiefeng)**: 如果队友先出完，由队友接风出牌。
+*   **单人模式**: 内置 AI 机器人，一个人也能玩（1 人 + 3 电脑）。
+*   **多人对战**: 支持通过 Socket.io 进行 4 人在线对战。
 
-## Prerequisites
+## 环境要求
 
-*   Node.js (v14 or higher)
+*   Node.js (v14 或更高版本)
 *   npm
 
-## Installation
+## 安装步骤
 
-1.  **Clone the repository** (if applicable) or download the source code.
-2.  **Install dependencies** for both server and client:
+1.  **克隆仓库** 或下载源代码。
+2.  **安装依赖** (服务端和客户端都需要安装):
 
     ```bash
-    # Install server dependencies
+    # 安装服务端依赖
     cd server
     npm install
 
-    # Install client dependencies
+    # 安装客户端依赖
     cd ../client
     npm install
     ```
 
-## Running the Application
+## 运行应用
 
-You need to run both the server and the client.
+你需要同时启动服务端和客户端。
 
-1.  **Start the Server**:
+1.  **启动服务端**:
     ```bash
     cd server
     node server.js
     ```
-    The server will start on port `3001`.
+    服务端将在端口 `3001` 上运行。
 
-2.  **Start the Client**:
+2.  **启动客户端**:
     ```bash
     cd client
     npm run dev
     ```
-    The client will start on `http://localhost:5173`.
+    客户端将在 `http://localhost:5173` 上运行。
 
-3.  **Play**:
-    Open `http://localhost:5173` in your browser. Open 4 tabs to simulate 4 players for testing.
+3.  **开始游戏**:
+    在浏览器中打开 `http://localhost:5173`。
 
-## How to Play
+## 玩法说明
 
-*   **Join**: Click "Join" (or refresh) to enter the room.
-*   **Start**: When 4 players have joined, click "Start" (开始) in the ribbon.
-*   **Select Cards**: Click on cells in the "Player Hand" area (Rows 15-20) to select cards.
-*   **Play (出)**: Click the "出" button (Row 21, Col D) to play selected cards.
-*   **Pass (过)**: Click the "过" button (Row 21, Col F) to pass your turn.
-*   **Tribute**: Follow the on-screen prompts during the Tribute phase.
+*   **加入游戏**: 刷新页面即可自动连接。
+*   **单人模式**: 点击工具栏上的 "单人模式" 按钮，即可与 3 个 AI 机器人对战。
+*   **多人模式**: 打开 4 个浏览器标签页（或邀请朋友）即可模拟 4 人对战。当 4 人都加入后，点击工具栏上的 "开始" 按钮。
+*   **选牌**: 点击 "玩家手牌" 区域（第 15-20 行）的单元格来选择牌。
+*   **出牌**: 点击 "出" 按钮（第 21 行 D 列）出牌。
+*   **过牌**: 点击 "过" 按钮（第 21 行 F 列）跳过回合。
+*   **进贡/还牌**: 在进贡阶段，根据屏幕提示点击相应的牌进行进贡或还牌。
 
-## License
+## 许可证
 
 MIT

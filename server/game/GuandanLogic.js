@@ -460,6 +460,131 @@ class GuandanLogic {
         // Tube/Plate have fixed counts.
         return handA.rank > handB.rank;
     }
+    // AI: Find the best move
+    findBestMove(hand, lastHand, currentLevelRank) {
+        // 1. Analyze Hand
+        const analysis = this.analyzeHand(hand, currentLevelRank);
+
+        // 2. If Free Turn (Lead)
+        if (!lastHand) {
+            // Priority:
+            // 1. Smallest Single (if not part of larger structure)
+            // 2. Smallest Pair
+            // 3. Smallest Triplet
+            // 4. ...
+            // For MVP, just dump smallest available unit that isn't a bomb.
+
+            // Try Single
+            if (analysis.singles.length > 0) return analysis.singles[0];
+            // Try Pair
+            if (analysis.pairs.length > 0) return analysis.pairs[0];
+            // Try Triplet
+            if (analysis.triplets.length > 0) return analysis.triplets[0];
+            // Try Bomb (if nothing else)
+            if (analysis.bombs.length > 0) return analysis.bombs[0];
+
+            // Fallback: just play first card
+            return [hand[0]];
+        }
+
+        // 3. Follow Turn
+        const targetType = lastHand.type;
+        const targetRank = lastHand.rank;
+
+        // Helper to check if a candidate beats target
+        const beats = (candidateCards) => {
+            const candidateHand = this.validateHand(candidateCards, currentLevelRank);
+            if (!candidateHand.isValid) return false;
+            return this.compareHands(candidateHand, lastHand, currentLevelRank);
+        };
+
+        // Try to beat with same type
+        let candidates = [];
+        if (targetType === 'SINGLE') candidates = analysis.singles;
+        else if (targetType === 'PAIR') candidates = analysis.pairs;
+        else if (targetType === 'TRIPLET') candidates = analysis.triplets;
+        else if (targetType === 'BOMB') candidates = analysis.bombs; // Will need special filtering
+        else if (targetType === 'FULL_HOUSE') candidates = []; // TODO: Implement Full House finder
+        else if (targetType === 'STRAIGHT') candidates = []; // TODO: Implement Straight finder
+        // ... other types
+
+        // Find smallest candidate that wins
+        for (let cand of candidates) {
+            if (beats(cand)) return cand;
+        }
+
+        // If target is NOT a bomb, try to bomb it
+        if (targetType !== 'BOMB' && targetType !== 'KING_BOMB') {
+            for (let bomb of analysis.bombs) {
+                if (beats(bomb)) return bomb;
+            }
+        } else if (targetType === 'BOMB') {
+            // Try bigger bombs
+            for (let bomb of analysis.bombs) {
+                if (beats(bomb)) return bomb;
+            }
+        }
+
+        // Pass
+        return null;
+    }
+
+    // Helper: Group hand into logical units
+    analyzeHand(hand, currentLevelRank) {
+        const counts = {};
+        const ghosts = [];
+        const normals = [];
+
+        hand.forEach(c => {
+            if (this.isGhost(c, currentLevelRank)) {
+                ghosts.push(c);
+            } else {
+                const val = this.getCardValue(c, currentLevelRank);
+                if (!counts[val]) counts[val] = [];
+                counts[val].push(c);
+                normals.push(c);
+            }
+        });
+
+        const sortedVals = Object.keys(counts).map(Number).sort((a, b) => a - b);
+
+        const singles = [];
+        const pairs = [];
+        const triplets = [];
+        const bombs = [];
+
+        // First pass: Identify Bombs (Natural)
+        // Also check King Bomb
+        const jokers = hand.filter(c => c.type === 'JOKER');
+        if (jokers.length === 4) bombs.push(jokers);
+
+        for (let val of sortedVals) {
+            const cards = counts[val];
+            if (cards.length >= 4) {
+                bombs.push(cards);
+            }
+        }
+
+        // Second pass: Identify smaller units (ignoring cards used in bombs? No, allow breaking for now or just list all possibilities)
+        // For simple AI, let's list all disjoint possibilities.
+        // Actually, listing ALL valid singles/pairs is better.
+
+        for (let val of sortedVals) {
+            const cards = counts[val];
+            if (cards.length === 1) singles.push(cards);
+            if (cards.length === 2) pairs.push(cards);
+            if (cards.length === 3) triplets.push(cards);
+
+            // Also allow breaking larger sets?
+            if (cards.length > 1) singles.push([cards[0]]);
+            if (cards.length > 2) pairs.push(cards.slice(0, 2));
+            if (cards.length > 3) triplets.push(cards.slice(0, 3));
+        }
+
+        return { singles, pairs, triplets, bombs };
+    }
+
+
 }
 
 module.exports = new GuandanLogic();

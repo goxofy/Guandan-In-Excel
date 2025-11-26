@@ -37,13 +37,16 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             const handIndex = rowIndex * 7 + colIndex;
 
             if (myHand && myHand[handIndex]) {
-                return (
-                    <CardCell
-                        card={myHand[handIndex]}
-                        selected={selectedCards && selectedCards.includes(handIndex)}
-                        onClick={() => onCardClick && onCardClick(handIndex)}
-                    />
-                );
+                return {
+                    content: (
+                        <CardCell
+                            card={myHand[handIndex]}
+                            selected={selectedCards && selectedCards.includes(handIndex)}
+                            onClick={() => onCardClick && onCardClick(handIndex)}
+                        />
+                    ),
+                    style: {}
+                };
             }
         }
 
@@ -53,9 +56,14 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             if (!p || !gameState.roundPlays || !gameState.roundPlays[p.id]) return null;
 
             const play = gameState.roundPlays[p.id];
+
+            // Check if this is the active "Last Played Hand" that needs to be beaten
+            const isLastPlayed = gameState.lastPlayedHand && gameState.lastPlayedHand.playerId === p.id;
+            const bgStyle = isLastPlayed ? { backgroundColor: '#fff7ed' } : {}; // Light orange background
+
             if (play.type === 'PASS') {
                 if (row === startRow && col === startColChar) {
-                    return <span className="text-gray-400 italic">PASS</span>;
+                    return { content: <span className="text-gray-400 italic">PASS</span>, style: {} };
                 }
                 return null;
             }
@@ -67,7 +75,7 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
                 if (col === startColChar && row >= startRow && row < startRow + cards.length) {
                     const cIdx = row - startRow;
                     if (cards[cIdx]) {
-                        return <CardCell card={cards[cIdx]} />;
+                        return { content: <CardCell card={cards[cIdx]} />, style: bgStyle };
                     }
                 }
             } else {
@@ -81,7 +89,7 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
                     if (colIndex >= startColIndex && colIndex < startColIndex + 7) {
                         const cIdx = (row - startRow) * 7 + (colIndex - startColIndex);
                         if (cards[cIdx]) {
-                            return <CardCell card={cards[cIdx]} />;
+                            return { content: <CardCell card={cards[cIdx]} />, style: bgStyle };
                         }
                     }
                 }
@@ -89,50 +97,58 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             return null;
         };
 
-        // Top Player Plays (Row 3, Col E) - Horizontal E-K
-        const topContent = renderRoundPlay('TOP', 3, 'E');
-        if (topContent) return topContent;
+        // Check for round plays for all players
+        const topPlay = renderRoundPlay('TOP', 3, 'E');
+        if (topPlay) return topPlay;
+        const leftPlay = renderRoundPlay('LEFT', 8, 'C', true);
+        if (leftPlay) return leftPlay;
+        const rightPlay = renderRoundPlay('RIGHT', 8, 'M', true);
+        if (rightPlay) return rightPlay;
+        const selfPlay = renderRoundPlay('SELF', 19, 'E');
+        if (selfPlay) return selfPlay;
 
-        // Left Player Plays (Row 8, Col C) - Vertical
-        const leftContent = renderRoundPlay('LEFT', 8, 'C', true);
-        if (leftContent) return leftContent;
-
-        // Right Player Plays (Row 8, Col M) - Vertical
-        const rightContent = renderRoundPlay('RIGHT', 8, 'M', true);
-        if (rightContent) return rightContent;
-
-        // Self Plays (Row 19, Col E) - Horizontal E-K
-        const selfContent = renderRoundPlay('SELF', 19, 'E');
-        if (selfContent) return selfContent;
-
-        // Finished/Ready Markers
+        // Finished/Ready Markers & Card Counts
         const isPlaying = gameState && gameState.gameState === 'PLAYING';
+
+        if (cellId === 'H1') { // Top Player Card Count
+            const p = getPlayerByPos('TOP');
+            if (p && isPlaying && typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
+                return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
+            }
+        }
+
         if (cellId === 'H3') { // Top Marker
             const p = getPlayerByPos('TOP');
             if (p) {
-                if (!isPlaying) return <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>;
-                if (p.hand.length === 0) return <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>;
+                if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
+                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
             }
         }
-        if (cellId === 'B11') { // Left Marker
+        if (cellId === 'B11') { // Left Marker & Count
             const p = getPlayerByPos('LEFT');
             if (p) {
-                if (!isPlaying) return <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>;
-                if (p.hand.length === 0) return <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>;
+                if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
+                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
+                if (typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
+                    return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
+                }
             }
         }
-        if (cellId === 'N11') { // Right Marker
+        if (cellId === 'N11') { // Right Marker & Count
             const p = getPlayerByPos('RIGHT');
             if (p) {
-                if (!isPlaying) return <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>;
-                if (p.hand.length === 0) return <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>;
+                if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
+                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
+                if (typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
+                    return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
+                }
             }
         }
         if (cellId === 'H20') { // Self Marker (Above Hand)
             const p = getPlayerByPos('SELF');
             if (p) {
-                if (!isPlaying) return <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>;
-                if (p.hand.length === 0) return <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>;
+                if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
+                if (p.hand.length === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
             }
         }
 
@@ -219,9 +235,13 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
                                 }
                             }
 
+                            const cellData = renderCellContent(col, row);
+                            const content = cellData ? cellData.content : null;
+                            const style = cellData ? cellData.style : {};
+
                             return (
-                                <div key={cellId} className={`border-r border-b border-gray-200 ${handBgClass} px-1 flex items-center justify-center h-[24px]`}>
-                                    {renderCellContent(col, row)}
+                                <div key={cellId} className={`border-r border-b border-gray-200 ${handBgClass} px-1 flex items-center justify-center h-[24px]`} style={style}>
+                                    {content}
                                 </div>
                             );
                         })}
