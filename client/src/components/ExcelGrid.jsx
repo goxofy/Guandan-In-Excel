@@ -51,41 +51,42 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
         }
 
         // Render Other Players' Hands (Review Mode)
-        // TOP Hand: Rows 1-2, Cols E-K (Skip H)
+        // TOP Hand: Rows 3-4, Cols D-L
         const topPlayer = getPlayerByPos('TOP');
         if (topPlayer && Array.isArray(topPlayer.hand)) {
-            if ((row === 1 || row === 2) && playerCols.includes(col) && col !== 'H') {
-                const colIndex = playerCols.indexOf(col);
-                const rowIndex = row - 1;
-                // Skip H (index 3 in playerCols)
-                // E(0), F(1), G(2), H(3-SKIP), I(4), J(5), K(6)
-                // We map 0,1,2 -> 0,1,2. 4,5,6 -> 3,4,5.
-                let adjustedColIndex = colIndex;
-                if (colIndex > 3) adjustedColIndex = colIndex - 1;
-
-                const handIndex = rowIndex * 6 + adjustedColIndex; // 6 cards per row (excluding H)
+            const topCols = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+            if ((row === 3 || row === 4) && topCols.includes(col)) {
+                const colIndex = topCols.indexOf(col);
+                const rowIndex = row - 3;
+                const handIndex = rowIndex * 9 + colIndex;
                 if (topPlayer.hand[handIndex]) {
                     return { content: <CardCell card={topPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
                 }
             }
         }
 
-        // LEFT Hand: Col A, Rows 5-18
+        // LEFT Hand: Cols C-D, Rows 6-15
         const leftPlayer = getPlayerByPos('LEFT');
         if (leftPlayer && Array.isArray(leftPlayer.hand)) {
-            if (col === 'A' && row >= 5 && row <= 18) {
-                const handIndex = row - 5;
+            const leftCols = ['C', 'D'];
+            if (leftCols.includes(col) && row >= 6 && row <= 15) {
+                const colIndex = leftCols.indexOf(col);
+                const rowIndex = row - 6;
+                const handIndex = rowIndex * 2 + colIndex;
                 if (leftPlayer.hand[handIndex]) {
                     return { content: <CardCell card={leftPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
                 }
             }
         }
 
-        // RIGHT Hand: Col O, Rows 5-18
+        // RIGHT Hand: Cols L-M, Rows 6-15
         const rightPlayer = getPlayerByPos('RIGHT');
         if (rightPlayer && Array.isArray(rightPlayer.hand)) {
-            if (col === 'O' && row >= 5 && row <= 18) {
-                const handIndex = row - 5;
+            const rightCols = ['L', 'M'];
+            if (rightCols.includes(col) && row >= 6 && row <= 15) {
+                const colIndex = rightCols.indexOf(col);
+                const rowIndex = row - 6;
+                const handIndex = rowIndex * 2 + colIndex;
                 if (rightPlayer.hand[handIndex]) {
                     return { content: <CardCell card={rightPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
                 }
