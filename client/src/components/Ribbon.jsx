@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Play, LogIn, RefreshCw, Save, Clipboard, Scissors, Copy, User } from 'lucide-react';
+import { Play, LogIn, RefreshCw, Save, Clipboard, Scissors, Copy, User, LogOut } from 'lucide-react';
 
-const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer }) => {
+const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer, onExit }) => {
     const [activeTab, setActiveTab] = useState('开始');
 
     const tabs = ['文件', '开始', '插入', '页面布局', '公式', '数据', '审阅', '视图', '帮助'];
@@ -47,17 +47,17 @@ const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer }) => {
                                     <LogIn size={24} className="text-blue-600" />
                                     <span className="text-[10px]">加入</span>
                                 </button>
-                                <button onClick={onSinglePlayer} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="单人模式">
-                                    <User size={24} className="text-purple-600" />
-                                    <span className="text-[10px]">单人</span>
-                                </button>
                                 <button onClick={onStart} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="开始游戏">
                                     <Play size={24} className="text-green-600" />
                                     <span className="text-[10px]">开始</span>
                                 </button>
-                                <button onClick={onPlay} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="出牌">
-                                    <Play size={24} className="text-red-600 rotate-90" />
-                                    <span className="text-[10px]">出牌</span>
+                                <button onClick={onSinglePlayer} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="单人模式">
+                                    <User size={24} className="text-purple-600" />
+                                    <span className="text-[10px]">单人</span>
+                                </button>
+                                <button onClick={() => { console.log('Ribbon Exit Clicked'); if (onExit) onExit(); else console.error('onExit prop missing'); }} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="退出房间">
+                                    <LogOut size={24} className="text-red-600" />
+                                    <span className="text-[10px]">退出</span>
                                 </button>
                                 <button className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="理牌">
                                     <RefreshCw size={24} className="text-orange-600" />

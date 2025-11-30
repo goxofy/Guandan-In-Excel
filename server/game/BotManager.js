@@ -38,19 +38,102 @@ class BotManager {
     handleTribute(room) {
         // Check if any bot needs to pay tribute or return card
         const pendingActions = room.tributePending || [];
+        console.log(`[BotManager] handleTribute called. Pending:`, pendingActions);
+        console.log(`[BotManager] Current bots:`, this.bots.map(b => b.id));
+
+        // Clear stale timers if we are just entering tribute?
+        // Actually, if we are in TRIBUTE, any previous 'thinking' for PLAYING is invalid.
+        // But we don't want to clear the timer we JUST set for tribute.
+        // So we should clear timers when state transitions.
+        // But here, let's just force clear if we are about to schedule.
+        // Or better: clear all timers when entering TRIBUTE?
+        // We can't easily detect "entering" here without state tracking.
+        // But we can check if the timer exists and if it's "stale".
+        // Since we don't track timer type, let's just clear it if we find a bot that needs to act.
+        // Because if it has a timer, it's either from PLAYING (stale) or TRIBUTE (already scheduled).
+        // If it's already scheduled, we return.
+        // But how do we distinguish?
+        // We can add a flag to the timer or store tribute timers separately?
+        // Or just assume that if handleTribute is called, we should be the one setting the timer.
+        // If a timer exists, maybe we should clear it and reset it?
+        // But if we call handleTribute repeatedly (on every update), we don't want to reset it constantly.
+
+        // Solution: When game ends (or starts), clear all timers.
+        // But we are in BotManager.
+        // Let's clear timers for the specific bot if we are about to schedule, 
+        // BUT we need to know if it's a "Tribute Timer" or "Playing Timer".
+        // Let's use a different property for tribute timers? 
+        // Or just clear 'thinkingTimers' in 'onGameStateUpdate' if state changed?
+        // We don't track previous state here.
+
+        // Hack: If we find a bot needs to act, and it has a timer, we assume it's STALE if it's been too long?
+        // No.
+
+        // Better: In server.js, when state changes to TRIBUTE, call botManager.resetTimers().
+        // But let's try to fix it here locally.
+        // If we see a pending action for a bot, and it has a timer, we can't be sure.
+        // BUT, if the bot is "thinking" about a move, it shouldn't be, because state is TRIBUTE.
+        // So any existing timer MUST be stale (or from a previous handleTribute call).
+        // If it's from a previous handleTribute call, we shouldn't clear it.
+        // How to distinguish?
+        // We can tag the timer.
+
+        // Let's just clear ALL timers in `startGame` in server.js? 
+        // No, BotManager manages them.
+
+        // Let's add a `reset()` method and call it from server.js when game starts.
+        // Or, in `handleTribute`, we can check a flag `tributeScheduled`.
+
+        // Let's try this:
+        // If we are in TRIBUTE, we only want to schedule ONCE.
+        // We can use a Set `tributeScheduledBots`.
+
+        if (!this.tributeScheduledBots) this.tributeScheduledBots = new Set();
 
         pendingActions.forEach(action => {
             const bot = this.bots.find(b => b.id === action.from);
+            console.log(`[BotManager] Checking action from ${action.from}. Found bot:`, bot ? bot.id : 'undefined');
             if (bot) {
-                // Bot needs to act
-                // Check if already scheduled?
-                if (this.thinkingTimers[bot.id]) return; // Already thinking
+                // If we haven't scheduled this bot for this tribute phase yet
+                // But tribute phase can have multiple steps (Pay -> Return).
+                // So we need to clear the flag when action completes.
+
+                // Let's just use the fact that if `thinkingTimers[bot.id]` exists, it MIGHT be stale.
+                // If we force clear it, we might double schedule if handleTribute is called rapidly.
+                // But handleTribute is called on state update.
+
+                // Let's assume the issue IS stale timers from PLAYING.
+                // We can clear all timers if we detect we are in TRIBUTE and we haven't cleared them yet?
+                // Too complex.
+
+                // Simplest fix: In `makeMove`, if state is TRIBUTE, just exit.
+                // AND, in `handleTribute`, if we see a timer, we assume it's valid TRIBUTE timer?
+                // No, that's the bug. It assumes it's valid, but it's stale.
+
+                // So we MUST clear stale timers.
+                // Let's just clear the timer if we are in TRIBUTE and the timer was set for PLAYING.
+                // We can store `timerType` in `thinkingTimers`.
+                // this.thinkingTimers[bot.id] = { timer: ..., type: 'PLAYING'|'TRIBUTE' }
+
+                // Refactor thinkingTimers to store object.
+
+                let timerData = this.thinkingTimers[bot.id];
+                if (timerData && timerData.type === 'PLAYING') {
+                    console.log(`[BotManager] Clearing stale PLAYING timer for ${bot.name}`);
+                    clearTimeout(timerData.timer);
+                    delete this.thinkingTimers[bot.id];
+                    timerData = null;
+                }
+
+                if (timerData) return; // Already thinking (TRIBUTE)
 
                 console.log(`[BotManager] ${bot.name} needs to ${action.type}`);
 
-                this.thinkingTimers[bot.id] = setTimeout(() => {
+                const timer = setTimeout(() => {
                     this.makeTributeMove(bot, action);
                 }, 1000 + Math.random() * 2000);
+
+                this.thinkingTimers[bot.id] = { timer, type: 'TRIBUTE' };
             }
         });
     }
@@ -105,18 +188,30 @@ class BotManager {
 
     scheduleMove(bot) {
         // Cancel existing timer if any (though shouldn't happen for same bot)
-        if (this.thinkingTimers[bot.id]) clearTimeout(this.thinkingTimers[bot.id]);
+        if (this.thinkingTimers[bot.id]) {
+            clearTimeout(this.thinkingTimers[bot.id].timer);
+        }
 
         // Simulate thinking time (1-3 seconds)
         const delay = 1000 + Math.random() * 2000;
 
-        this.thinkingTimers[bot.id] = setTimeout(() => {
+        const timer = setTimeout(() => {
             this.makeMove(bot);
         }, delay);
+
+        this.thinkingTimers[bot.id] = { timer, type: 'PLAYING' };
     }
 
     makeMove(bot) {
         const room = this.room;
+
+        // If we are in TRIBUTE, abort!
+        if (room.gameState === 'TRIBUTE') {
+            console.log(`[BotManager] makeMove called for ${bot.name} but state is TRIBUTE. Aborting.`);
+            delete this.thinkingTimers[bot.id];
+            return;
+        }
+
         const player = room.players.find(p => p.id === bot.id);
 
         if (!player) return; // Bot removed?
@@ -167,11 +262,13 @@ class BotManager {
         } catch (e) {
             console.error(`[BotManager] Error in makeMove for ${bot.name}:`, e);
         }
+
+        delete this.thinkingTimers[bot.id];
     }
 
     // Clean up
     destroy() {
-        Object.values(this.thinkingTimers).forEach(t => clearTimeout(t));
+        Object.values(this.thinkingTimers).forEach(t => clearTimeout(t.timer));
         this.thinkingTimers = {};
     }
 }

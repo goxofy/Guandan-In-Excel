@@ -50,6 +50,48 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             }
         }
 
+        // Render Other Players' Hands (Review Mode)
+        // TOP Hand: Rows 1-2, Cols E-K (Skip H)
+        const topPlayer = getPlayerByPos('TOP');
+        if (topPlayer && Array.isArray(topPlayer.hand)) {
+            if ((row === 1 || row === 2) && playerCols.includes(col) && col !== 'H') {
+                const colIndex = playerCols.indexOf(col);
+                const rowIndex = row - 1;
+                // Skip H (index 3 in playerCols)
+                // E(0), F(1), G(2), H(3-SKIP), I(4), J(5), K(6)
+                // We map 0,1,2 -> 0,1,2. 4,5,6 -> 3,4,5.
+                let adjustedColIndex = colIndex;
+                if (colIndex > 3) adjustedColIndex = colIndex - 1;
+
+                const handIndex = rowIndex * 6 + adjustedColIndex; // 6 cards per row (excluding H)
+                if (topPlayer.hand[handIndex]) {
+                    return { content: <CardCell card={topPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
+                }
+            }
+        }
+
+        // LEFT Hand: Col A, Rows 5-18
+        const leftPlayer = getPlayerByPos('LEFT');
+        if (leftPlayer && Array.isArray(leftPlayer.hand)) {
+            if (col === 'A' && row >= 5 && row <= 18) {
+                const handIndex = row - 5;
+                if (leftPlayer.hand[handIndex]) {
+                    return { content: <CardCell card={leftPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
+                }
+            }
+        }
+
+        // RIGHT Hand: Col O, Rows 5-18
+        const rightPlayer = getPlayerByPos('RIGHT');
+        if (rightPlayer && Array.isArray(rightPlayer.hand)) {
+            if (col === 'O' && row >= 5 && row <= 18) {
+                const handIndex = row - 5;
+                if (rightPlayer.hand[handIndex]) {
+                    return { content: <CardCell card={rightPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
+                }
+            }
+        }
+
         // Round Plays Rendering
         const renderRoundPlay = (pos, startRow, startColChar, isVertical = false) => {
             const p = getPlayerByPos(pos);
@@ -110,6 +152,17 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
         // Finished/Ready Markers & Card Counts
         const isPlaying = gameState && gameState.gameState === 'PLAYING';
 
+        // Helper to get rank text
+        const getRankText = (player) => {
+            if (!gameState || !gameState.rankings) return '(已出完)';
+            const rankIndex = gameState.rankings.indexOf(player.id);
+            if (rankIndex === 0) return '头游';
+            if (rankIndex === 1) return '二游';
+            if (rankIndex === 2) return '三游';
+            if (rankIndex === 3) return '末游';
+            return '(已出完)';
+        };
+
         if (cellId === 'H1') { // Top Player Card Count
             const p = getPlayerByPos('TOP');
             if (p && isPlaying && typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
@@ -121,14 +174,14 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             const p = getPlayerByPos('TOP');
             if (p) {
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
+                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
             }
         }
         if (cellId === 'B11') { // Left Marker & Count
             const p = getPlayerByPos('LEFT');
             if (p) {
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
+                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
                 if (typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
                     return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
                 }
@@ -138,7 +191,7 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             const p = getPlayerByPos('RIGHT');
             if (p) {
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
+                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
                 if (typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
                     return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
                 }
@@ -148,7 +201,36 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             const p = getPlayerByPos('SELF');
             if (p) {
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand.length === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已出完)</span>, style: {} };
+                if (p.hand.length === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
+            }
+        }
+
+        // Tribute Log Display (Center of Table)
+        if (cellId === 'G12' && gameState && gameState.lastTributeLog) {
+            const log = gameState.lastTributeLog;
+            const fromPlayer = gameState.players.find(p => p.id === log.from);
+            const toPlayer = gameState.players.find(p => p.id === log.to);
+            const card = log.card;
+
+            if (fromPlayer && toPlayer && card) {
+                return {
+                    content: (
+                        <div className="absolute top-0 left-0 w-[240px] h-[80px] bg-yellow-50 border border-yellow-300 rounded flex items-center justify-center gap-4 shadow-md z-10 pointer-events-none">
+                            <div className="text-xs text-center">
+                                <span className="font-bold block">{fromPlayer.name}</span>
+                                <span className="text-gray-500">{log.type === 'PAY' || log.type === 'PAY_DOUBLE' ? '进贡' : '还牌'}</span>
+                            </div>
+                            <div className="transform scale-125">
+                                <CardCell card={card} />
+                            </div>
+                            <div className="text-xs text-center">
+                                <span className="text-gray-500">给</span>
+                                <span className="font-bold block">{toPlayer.name}</span>
+                            </div>
+                        </div>
+                    ),
+                    style: { position: 'relative', overflow: 'visible' }
+                };
             }
         }
 
@@ -222,12 +304,13 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
                                     );
                                 }
                                 if (col === 'I') { // Pass Button
+                                    const disabled = !myHand || myHand.length === 0;
                                     return (
                                         <div
                                             key={cellId}
-                                            className="border-r border-b border-gray-200 flex items-center justify-center cursor-pointer text-sm font-bold h-[24px] hover:opacity-90"
+                                            className={`border-r border-b border-gray-200 flex items-center justify-center cursor-pointer text-sm font-bold h-[24px] ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'}`}
                                             style={{ backgroundColor: '#6b7280', color: 'white' }}
-                                            onClick={() => onCardClick && onCardClick('PASS')}
+                                            onClick={() => !disabled && onCardClick && onCardClick('PASS')}
                                         >
                                             过
                                         </div>
