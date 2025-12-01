@@ -15,6 +15,44 @@ const io = new Server(server, {
     }
 });
 
+function getMaskedPlayers(players) {
+    return players.map(p => ({
+        ...p,
+        hand: Array.isArray(p.hand) ? p.hand.length : p.hand
+    }));
+}
+
+function updatePlayerIds(room, oldId, newId) {
+    console.log(`[updatePlayerIds] Updating ${oldId} -> ${newId} in room ${room.id}`);
+
+    // 1. Update lastPlayedHand
+    if (room.lastPlayedHand && room.lastPlayedHand.playerId === oldId) {
+        room.lastPlayedHand.playerId = newId;
+    }
+
+    // 2. Update roundPlays
+    if (room.roundPlays && room.roundPlays[oldId]) {
+        room.roundPlays[newId] = room.roundPlays[oldId];
+        delete room.roundPlays[oldId];
+    }
+
+    // 3. Update rankings
+    if (room.rankings) {
+        const rankIdx = room.rankings.indexOf(oldId);
+        if (rankIdx !== -1) {
+            room.rankings[rankIdx] = newId;
+        }
+    }
+
+    // 4. Update tributePending
+    if (room.tributePending) {
+        room.tributePending.forEach(action => {
+            if (action.from === oldId) action.from = newId;
+            if (action.to === oldId) action.to = newId;
+        });
+    }
+}
+
 const GuandanLogic = require('./game/GuandanLogic');
 const BotManager = require('./game/BotManager');
 
@@ -47,7 +85,7 @@ io.on('connection', (socket) => {
             tableCards: [], // Cards played on table
             turnIndex: 0,
             turnDeadline: 0, // Timestamp for turn timeout
-            lastTributeLog: null // { from, to, card, type }
+            tributeLogs: [] // Array of { from, to, card, type }
         });
         socket.emit('roomCreated', roomId);
     });
@@ -67,6 +105,9 @@ io.on('connection', (socket) => {
             const existingPlayer = room.players.find(p => p.userId === userId);
             if (existingPlayer) {
                 console.log(`[SP] Player ${userId} reconnecting to ${roomId}`);
+                const oldId = existingPlayer.id;
+                updatePlayerIds(room, oldId, socket.id);
+
                 existingPlayer.id = socket.id;
                 existingPlayer.connected = true;
 
@@ -102,7 +143,7 @@ io.on('connection', (socket) => {
             tableCards: [],
             turnIndex: 0,
             turnDeadline: 0,
-            lastTributeLog: null,
+            tributeLogs: [],
             isSinglePlayer: true
         };
         rooms.set(roomId, room);
@@ -156,7 +197,7 @@ io.on('connection', (socket) => {
         };
 
         // Start Game Immediately
-        io.to(roomId).emit('playerJoined', room.players);
+        io.to(roomId).emit('playerJoined', getMaskedPlayers(room.players));
         startGame(roomId);
     });
 
@@ -184,7 +225,7 @@ io.on('connection', (socket) => {
                     tableCards: [],
                     turnIndex: 0,
                     turnDeadline: 0,
-                    lastTributeLog: null
+                    tributeLogs: []
                 };
                 rooms.set(roomId, room);
 
@@ -237,7 +278,7 @@ io.on('connection', (socket) => {
                 };
 
                 // Start Game Immediately
-                io.to(roomId).emit('playerJoined', room.players);
+                io.to(roomId).emit('playerJoined', getMaskedPlayers(room.players));
                 startGame(roomId);
                 return; // Done for SP
             } else {
@@ -252,7 +293,7 @@ io.on('connection', (socket) => {
                     tableCards: [],
                     turnIndex: 0,
                     turnDeadline: 0,
-                    lastTributeLog: null
+                    tributeLogs: []
                 };
                 rooms.set(roomId, room);
                 console.log(`Auto-created room ${roomId}`);
@@ -265,6 +306,9 @@ io.on('connection', (socket) => {
         if (existingPlayerByUserId) {
             // Reconnection!
             console.log(`Player ${userId} reconnected`);
+            const oldId = existingPlayerByUserId.id;
+            updatePlayerIds(room, oldId, socket.id);
+
             existingPlayerByUserId.id = socket.id; // Update socket ID
             existingPlayerByUserId.connected = true;
 
@@ -278,7 +322,7 @@ io.on('connection', (socket) => {
             });
 
             // Notify others
-            io.to(roomId).emit('playerJoined', room.players);
+            io.to(roomId).emit('playerJoined', getMaskedPlayers(room.players));
             return;
         }
 
@@ -300,7 +344,7 @@ io.on('connection', (socket) => {
         room.players.push(player);
         socket.join(roomId);
 
-        io.to(roomId).emit('playerJoined', room.players);
+        io.to(roomId).emit('playerJoined', getMaskedPlayers(room.players));
 
         if (room.players.length === 4) {
             io.to(roomId).emit('gameReady');
@@ -361,7 +405,7 @@ io.on('connection', (socket) => {
                     botManagers.delete(roomId);
                 } else {
                     // Notify others
-                    io.to(roomId).emit('playerJoined', room.players);
+                    io.to(roomId).emit('playerJoined', getMaskedPlayers(room.players));
                 }
             }
         }
@@ -376,7 +420,7 @@ io.on('connection', (socket) => {
                 player.connected = false;
                 console.log(`Player ${player.userId} disconnected from room ${roomId}`);
 
-                io.to(roomId).emit('playerJoined', room.players);
+                io.to(roomId).emit('playerJoined', getMaskedPlayers(room.players));
 
                 // NO DESTRUCTION ON DISCONNECT
                 // This allows refresh to work (reconnect)
@@ -414,7 +458,7 @@ function startGame(roomId) {
     room.tableCards = [];
     room.roundPlays = {};
     room.passCount = 0;
-    room.lastTributeLog = null; // Clear previous tribute logs
+    room.tributeLogs = []; // Clear previous tribute logs
     room.tributeResult = null; // Clear previous tribute results
 
     // Check for Tribute Phase
@@ -426,7 +470,7 @@ function startGame(roomId) {
         room.currentLevelRank = '2';
         room.currentLevelRank = '2';
         room.gameState = 'PLAYING';
-        room.lastTributeLog = null;
+        room.tributeLogs = [];
         // No tribute
     } else if (room.rankings && room.rankings.length === 4) {
         console.log(`[startGame] Room ${roomId} entering TRIBUTE. Rankings:`, room.rankings);
@@ -451,7 +495,7 @@ function startGame(roomId) {
                 console.log(`[startGame] Anti-Tribute (Double): Losers have 2 Red Jokers. No tribute.`);
                 room.gameState = 'PLAYING';
                 room.turnIndex = p1.index; // First Place starts
-                room.turnDeadline = Date.now() + 30000;
+                room.turnDeadline = Date.now() + 1000;
             } else {
                 console.log(`[startGame] Double Tribute detected.`);
                 room.tributePending.push({ from: p3.id, type: 'PAY_DOUBLE' });
@@ -465,7 +509,7 @@ function startGame(roomId) {
                 console.log(`[startGame] Anti-Tribute (Single): Loser has 2 Red Jokers. No tribute.`);
                 room.gameState = 'PLAYING';
                 room.turnIndex = p1.index; // First Place starts
-                room.turnDeadline = Date.now() + 30000;
+                room.turnDeadline = Date.now() + 1000;
             } else {
                 // p4 -> p1 (PAY)
                 console.log(`[startGame] Single Tribute detected. ${p4.name} -> ${p1.name}`);
@@ -476,7 +520,7 @@ function startGame(roomId) {
         console.log(`[startGame] Room ${roomId} starting normal game. Rankings:`, room.rankings);
         room.gameState = 'PLAYING';
         room.turnIndex = 0; // Randomize?
-        room.turnDeadline = Date.now() + 30000; // 30s for first turn
+        room.turnDeadline = Date.now() + 1000; // 1s for first turn
     }
 
     // Emit game state
@@ -552,6 +596,11 @@ function handlePlayCards(roomId, playerId, cardIndices) {
     }
 
     // Play is valid
+    // Clear tribute logs if this is the first play of the round (or just clear it on any play, it's fine)
+    if (room.tributeLogs && room.tributeLogs.length > 0) {
+        room.tributeLogs = [];
+    }
+
     // Remove cards from hand
     for (let idx of sortedIndices) {
         player.hand.splice(idx, 1);
@@ -644,7 +693,7 @@ function handlePlayCards(roomId, playerId, cardIndices) {
         loopCount++;
     }
     room.turnIndex = nextTurnIndex;
-    room.turnDeadline = Date.now() + 30000; // 30s for next turn
+    room.turnDeadline = Date.now() + 1000; // 1s for next turn
 
     broadcastGameState(room);
 }
@@ -739,7 +788,7 @@ function handlePassTurn(roomId, playerId) {
             loopCount++;
         }
         room.turnIndex = nextTurnIndex;
-        room.turnDeadline = Date.now() + 30000; // 30s for next turn
+        room.turnDeadline = Date.now() + 1000; // 1s for next turn
     }
 
     broadcastGameState(room);
@@ -855,7 +904,8 @@ function handlePayTribute(roomId, playerId, cardIndex) {
         room.tributePending.push({ from: toPlayer.id, to: fromPlayer.id, type: 'RETURN' });
 
         // Log
-        room.lastTributeLog = { from: fromPlayer.id, to: toPlayer.id, card, type: 'PAY' };
+        if (!room.tributeLogs) room.tributeLogs = [];
+        room.tributeLogs.push({ from: fromPlayer.id, to: toPlayer.id, card, type: 'PAY' });
 
         // Track for Start Turn Logic (Single Tribute)
         if (!room.tributeResult) room.tributeResult = { type: 'SINGLE', payers: [] };
@@ -901,12 +951,10 @@ function handlePayTribute(roomId, playerId, cardIndex) {
                 room.tributePending.push({ from: p1.id, to: t1.from, type: 'RETURN' });
                 room.tributePending.push({ from: p2.id, to: t2.from, type: 'RETURN' });
 
-                // Log (Double Pay) - Just show one or both?
-                // Let's show "Double Pay" generic or last one?
-                // Let's show the last processed one.
-                room.lastTributeLog = { from: t1.from, to: p1.id, card: t1.card, type: 'PAY_DOUBLE' };
-                // Ideally we should show both. But UI might be simple.
-                // Let's just log the last one for now.
+                // Log (Double Pay)
+                if (!room.tributeLogs) room.tributeLogs = [];
+                room.tributeLogs.push({ from: t1.from, to: p1.id, card: t1.card, type: 'PAY_DOUBLE' });
+                room.tributeLogs.push({ from: t2.from, to: p2.id, card: t2.card, type: 'PAY_DOUBLE' });
 
                 // Track for Start Turn Logic (Double Tribute)
                 if (!room.tributeResult) room.tributeResult = { type: 'DOUBLE', payers: [] };
@@ -917,6 +965,11 @@ function handlePayTribute(roomId, playerId, cardIndex) {
                 p2.hand.push(t1.card);
                 room.tributePending.push({ from: p1.id, to: t2.from, type: 'RETURN' });
                 room.tributePending.push({ from: p2.id, to: t1.from, type: 'RETURN' });
+
+                // Log (Double Pay)
+                if (!room.tributeLogs) room.tributeLogs = [];
+                room.tributeLogs.push({ from: t1.from, to: p2.id, card: t1.card, type: 'PAY_DOUBLE' });
+                room.tributeLogs.push({ from: t2.from, to: p1.id, card: t2.card, type: 'PAY_DOUBLE' });
             }
 
             GuandanLogic.sortHand(p1.hand, room.currentLevelRank);
@@ -965,7 +1018,8 @@ function handleReturnCard(roomId, playerId, cardIndex) {
     room.tributePending.splice(actionIndex, 1);
 
     // Log
-    room.lastTributeLog = { from: fromPlayer.id, to: toPlayer.id, card, type: 'RETURN' };
+    if (!room.tributeLogs) room.tributeLogs = [];
+    room.tributeLogs.push({ from: fromPlayer.id, to: toPlayer.id, card, type: 'RETURN' });
 
     // Check if all done
     if (room.tributePending.length === 0) {
@@ -1012,7 +1066,7 @@ function handleReturnCard(roomId, playerId, cardIndex) {
                     room.turnIndex = p1.index;
                 }
 
-                room.turnDeadline = Date.now() + 30000; // 30s
+                room.turnDeadline = Date.now() + 1000; // 1s
 
                 // Clear rankings for next game
                 room.rankings = [];

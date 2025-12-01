@@ -207,32 +207,36 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
         }
 
         // Tribute Log Display (Center of Table)
-        if (cellId === 'G12' && gameState && gameState.lastTributeLog) {
-            const log = gameState.lastTributeLog;
-            const fromPlayer = gameState.players.find(p => p.id === log.from);
-            const toPlayer = gameState.players.find(p => p.id === log.to);
-            const card = log.card;
+        // Tribute Log Display (Top Right - O2)
+        if (cellId === 'O2' && gameState && gameState.tributeLogs && gameState.tributeLogs.length > 0) {
+            return {
+                content: (
+                    <div className="absolute top-0 right-0 w-[240px] bg-yellow-50 border border-yellow-300 rounded shadow-md z-10 pointer-events-none p-2 flex flex-col gap-2">
+                        {gameState.tributeLogs.map((log, idx) => {
+                            const fromPlayer = gameState.players.find(p => p.id === log.from);
+                            const toPlayer = gameState.players.find(p => p.id === log.to);
+                            if (!fromPlayer || !toPlayer || !log.card) return null;
 
-            if (fromPlayer && toPlayer && card) {
-                return {
-                    content: (
-                        <div className="absolute top-0 left-0 w-[240px] h-[80px] bg-yellow-50 border border-yellow-300 rounded flex items-center justify-center gap-4 shadow-md z-10 pointer-events-none">
-                            <div className="text-xs text-center">
-                                <span className="font-bold block">{fromPlayer.name}</span>
-                                <span className="text-gray-500">{log.type === 'PAY' || log.type === 'PAY_DOUBLE' ? '进贡' : '还牌'}</span>
-                            </div>
-                            <div className="transform scale-125">
-                                <CardCell card={card} />
-                            </div>
-                            <div className="text-xs text-center">
-                                <span className="text-gray-500">给</span>
-                                <span className="font-bold block">{toPlayer.name}</span>
-                            </div>
-                        </div>
-                    ),
-                    style: { position: 'relative', overflow: 'visible' }
-                };
-            }
+                            return (
+                                <div key={idx} className="flex items-center justify-between border-b border-yellow-200 pb-1 last:border-0 last:pb-0">
+                                    <div className="text-xs text-center w-12">
+                                        <span className="font-bold block truncate">{fromPlayer.name}</span>
+                                        <span className="text-gray-500 scale-75 block">{log.type === 'PAY' || log.type === 'PAY_DOUBLE' ? '进贡' : '还牌'}</span>
+                                    </div>
+                                    <div className="transform scale-75">
+                                        <CardCell card={log.card} />
+                                    </div>
+                                    <div className="text-xs text-center w-12">
+                                        <span className="text-gray-500 scale-75 block">给</span>
+                                        <span className="font-bold block truncate">{toPlayer.name}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ),
+                style: { position: 'relative', overflow: 'visible' }
+            };
         }
 
         return null;

@@ -166,7 +166,7 @@ function App() {
             if (myAction) {
                 // arg is card index
                 if (typeof arg === 'number') {
-                    if (myAction.type === 'PAY') {
+                    if (myAction.type === 'PAY' || myAction.type === 'PAY_DOUBLE') {
                         socket.emit('payTribute', { roomId, cardIndex: arg });
                     } else {
                         socket.emit('returnCard', { roomId, cardIndex: arg });
@@ -249,21 +249,23 @@ function App() {
 
                 {/* Tribute Status Banner */}
                 {gameState && gameState.gameState === 'TRIBUTE' && (
-                    <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-4 rounded shadow-lg border border-gray-300 z-50 min-w-[300px] text-center">
-                        <h2 className="text-lg font-bold mb-2">进贡/还牌阶段</h2>
-                        {gameState.tributePending.find(a => a.from === socket.id) ? (
-                            <p className="text-red-600 font-bold animate-pulse">
-                                {gameState.tributePending.find(a => a.from === socket.id).type.includes('PAY') ? '请点击一张最大的牌进贡' : '请点击一张牌还给对方'}
-                            </p>
-                        ) : (
-                            <p className="text-gray-600">等待其他玩家操作...</p>
-                        )}
+                    <div className="absolute z-50" style={{ left: '640px', top: '170px', transform: 'translateX(-50%)' }}>
+                        <div className="bg-white p-4 rounded shadow-lg border border-gray-300 min-w-[300px] text-center">
+                            <h2 className="text-lg font-bold mb-2">进贡/还牌阶段</h2>
+                            {gameState.tributePending.find(a => a.from === socket.id) ? (
+                                <p className="text-red-600 font-bold animate-pulse">
+                                    {gameState.tributePending.find(a => a.from === socket.id).type.includes('PAY') ? '请点击一张最大的牌进贡' : '请点击一张牌还给对方'}
+                                </p>
+                            ) : (
+                                <p className="text-gray-600">等待其他玩家操作...</p>
+                            )}
+                        </div>
                     </div>
                 )}
 
                 {/* Countdown Modal */}
                 {gameState && gameState.gameState === 'COUNTDOWN' && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="absolute z-50" style={{ left: '640px', top: '170px', transform: 'translateX(-50%)' }}>
                         <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center min-w-[300px]">
                             <h2 className="text-xl font-bold mb-4 text-[#217346]">进贡完成</h2>
                             <p className="text-lg mb-4">游戏将在 <span className="text-red-600 font-bold text-2xl">{gameState.countdown}</span> 秒后开始</p>
@@ -273,7 +275,7 @@ function App() {
 
                 {/* Round Ended Modal */}
                 {gameState && gameState.gameState === 'ROUND_ENDED' && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="absolute z-50" style={{ left: '640px', top: '170px', transform: 'translateX(-50%)' }}>
                         <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center min-w-[300px]">
                             <h2 className="text-xl font-bold mb-4 text-[#217346]">本局结束</h2>
                             <div className="mb-6 text-left">
@@ -297,41 +299,40 @@ function App() {
                         </div>
                     </div>
                 )}
+                {/* Game Over Modal (Final Victory) */}
+                {gameState && gameState.gameState === 'GAME_OVER_WIN' && (
+                    <div className="absolute z-50" style={{ left: '640px', top: '170px', transform: 'translateX(-50%)' }}>
+                        <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center min-w-[300px]">
+                            <h2 className="text-2xl font-bold mb-4 text-[#217346]">游戏通关！</h2>
+                            <p className="text-lg mb-6">
+                                恭喜 <span className="font-bold text-red-600">队伍 {gameState.finalWinner}</span> 率先打过A级！
+                            </p>
+                            <button
+                                onClick={handleStart}
+                                className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
+                            >
+                                重新开始
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Error Modal */}
+                {errorMsg && (
+                    <div className="absolute z-50" style={{ left: '640px', top: '170px', transform: 'translateX(-50%)' }}>
+                        <div className="bg-white p-6 rounded shadow-lg border border-gray-300 text-center min-w-[250px]">
+                            <h2 className="text-lg font-bold mb-4 text-red-600">提示</h2>
+                            <p className="mb-6 text-gray-700">{errorMsg}</p>
+                            <button
+                                onClick={() => setErrorMsg(null)}
+                                className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
+                            >
+                                确定
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
-
-            {/* Game Over Modal (Final Victory) */}
-            {gameState && gameState.gameState === 'GAME_OVER_WIN' && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white p-8 rounded shadow-lg border border-gray-300 text-center">
-                        <h2 className="text-2xl font-bold mb-4 text-[#217346]">游戏通关！</h2>
-                        <p className="text-lg mb-6">
-                            恭喜 <span className="font-bold text-red-600">队伍 {gameState.finalWinner}</span> 率先打过A级！
-                        </p>
-                        <button
-                            onClick={handleStart}
-                            className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
-                        >
-                            重新开始
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Error Modal */}
-            {errorMsg && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white p-6 rounded shadow-lg border border-gray-300 text-center min-w-[250px]">
-                        <h2 className="text-lg font-bold mb-4 text-red-600">提示</h2>
-                        <p className="mb-6 text-gray-700">{errorMsg}</p>
-                        <button
-                            onClick={() => setErrorMsg(null)}
-                            className="px-6 py-2 bg-[#217346] text-white rounded hover:bg-[#1e6b41]"
-                        >
-                            确定
-                        </button>
-                    </div>
-                </div>
-            )}
 
             {/* Status Bar */}
             <div className="h-6 bg-[#217346] text-white flex items-center px-2 text-[10px] gap-4 relative">
