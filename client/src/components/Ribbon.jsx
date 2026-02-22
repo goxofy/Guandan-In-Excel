@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Play, LogIn, RefreshCw, Save, Clipboard, Scissors, Copy, User, LogOut } from 'lucide-react';
 
-const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer, onExit }) => {
+const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer, onExit, onSortHand }) => {
     const [activeTab, setActiveTab] = useState('开始');
 
     const tabs = ['文件', '开始', '插入', '页面布局', '公式', '数据', '审阅', '视图', '帮助'];
@@ -59,7 +59,7 @@ const Ribbon = ({ onJoin, onStart, onPlay, onSinglePlayer, onExit }) => {
                                     <LogOut size={24} className="text-red-600" />
                                     <span className="text-[10px]">退出</span>
                                 </button>
-                                <button className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="理牌">
+                                <button onClick={onSortHand} className="flex flex-col items-center cursor-pointer hover:bg-gray-200 p-1 rounded" title="理牌">
                                     <RefreshCw size={24} className="text-orange-600" />
                                     <span className="text-[10px]">理牌</span>
                                 </button>

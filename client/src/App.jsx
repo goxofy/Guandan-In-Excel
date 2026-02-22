@@ -206,6 +206,31 @@ function App() {
         socket.emit('joinSinglePlayerRoom', { roomId: finalRoomId, userId, playerName: 'Me' });
     };
 
+    const handleSortHand = () => {
+        if (!myHand || myHand.length === 0) return;
+        const currentLevelRank = gameState?.currentLevelRank || '2';
+        const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+        const getCardValue = (card) => {
+            if (card.type === 'JOKER') return card.val; // 100 or 101
+            const rankIndex = ranks.indexOf(card.rank);
+            const levelIndex = ranks.indexOf(currentLevelRank);
+            if (rankIndex === levelIndex) {
+                return card.suit === 'H' ? 200 : 99;
+            }
+            return card.rank === 'A' ? 14 : rankIndex + 2;
+        };
+
+        const sorted = [...myHand].sort((a, b) => {
+            const valA = getCardValue(a);
+            const valB = getCardValue(b);
+            if (valA !== valB) return valB - valA;
+            return a.suit.localeCompare(b.suit);
+        });
+        setMyHand(sorted);
+        setSelectedCards([]);
+    };
+
     const handleExit = () => {
         console.log('handleExit called');
         if (confirm('确定要退出当前房间吗？')) {
@@ -235,7 +260,7 @@ function App() {
                 </div>
             </div>
 
-            <Ribbon onJoin={handleJoin} onStart={handleStart} onPlay={handlePlay} onSinglePlayer={handleSinglePlayer} onExit={handleExit} />
+            <Ribbon onJoin={handleJoin} onStart={handleStart} onPlay={handlePlay} onSinglePlayer={handleSinglePlayer} onExit={handleExit} onSortHand={handleSortHand} />
 
             <div className="flex-1 overflow-auto relative">
                 <ExcelGrid
