@@ -51,11 +51,11 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
         }
 
         // Render Other Players' Hands (Review Mode)
-        // TOP Hand: Rows 3-4, Cols D-L
+        // TOP Hand: Rows 3-5, Cols D-L (3×9 = 27 cells)
         const topPlayer = getPlayerByPos('TOP');
         if (topPlayer && Array.isArray(topPlayer.hand)) {
             const topCols = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-            if ((row === 3 || row === 4) && topCols.includes(col)) {
+            if (row >= 3 && row <= 5 && topCols.includes(col)) {
                 const colIndex = topCols.indexOf(col);
                 const rowIndex = row - 3;
                 const handIndex = rowIndex * 9 + colIndex;
@@ -65,28 +65,28 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
             }
         }
 
-        // LEFT Hand: Cols C-D, Rows 6-15
+        // LEFT Hand: Cols C-E, Rows 6-14 (9×3 = 27 cells)
         const leftPlayer = getPlayerByPos('LEFT');
         if (leftPlayer && Array.isArray(leftPlayer.hand)) {
-            const leftCols = ['C', 'D'];
-            if (leftCols.includes(col) && row >= 6 && row <= 15) {
+            const leftCols = ['C', 'D', 'E'];
+            if (leftCols.includes(col) && row >= 6 && row <= 14) {
                 const colIndex = leftCols.indexOf(col);
                 const rowIndex = row - 6;
-                const handIndex = rowIndex * 2 + colIndex;
+                const handIndex = rowIndex * 3 + colIndex;
                 if (leftPlayer.hand[handIndex]) {
                     return { content: <CardCell card={leftPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
                 }
             }
         }
 
-        // RIGHT Hand: Cols L-M, Rows 6-15
+        // RIGHT Hand: Cols K-M, Rows 6-14 (9×3 = 27 cells)
         const rightPlayer = getPlayerByPos('RIGHT');
         if (rightPlayer && Array.isArray(rightPlayer.hand)) {
-            const rightCols = ['L', 'M'];
-            if (rightCols.includes(col) && row >= 6 && row <= 15) {
+            const rightCols = ['K', 'L', 'M'];
+            if (rightCols.includes(col) && row >= 6 && row <= 14) {
                 const colIndex = rightCols.indexOf(col);
                 const rowIndex = row - 6;
-                const handIndex = rowIndex * 2 + colIndex;
+                const handIndex = rowIndex * 3 + colIndex;
                 if (rightPlayer.hand[handIndex]) {
                     return { content: <CardCell card={rightPlayer.hand[handIndex]} />, style: { opacity: 0.8 } };
                 }
@@ -152,6 +152,19 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
 
         // Finished/Ready Markers & Card Counts
         const isPlaying = gameState && gameState.gameState === 'PLAYING';
+        const isReview = gameState && (gameState.gameState === 'ROUND_ENDED' || gameState.gameState === 'GAME_OVER_WIN');
+
+        // Helpers for hand type polymorphism (number during play, array during review)
+        const handIsEmpty = (hand) => {
+            if (typeof hand === 'number') return hand === 0;
+            if (Array.isArray(hand)) return hand.length === 0;
+            return false;
+        };
+        const getHandCount = (hand) => {
+            if (typeof hand === 'number') return hand;
+            if (Array.isArray(hand)) return hand.length;
+            return 0;
+        };
 
         // Helper to get rank text
         const getRankText = (player) => {
@@ -166,43 +179,50 @@ const ExcelGrid = ({ socket, myHand, gameState, myPlayerId, selectedCards, onCar
 
         if (cellId === 'H1') { // Top Player Card Count
             const p = getPlayerByPos('TOP');
-            if (p && isPlaying && typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
-                return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
+            const count = p ? getHandCount(p.hand) : 0;
+            if (p && isPlaying && count > 0 && count <= 10) {
+                return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{count}张</span>, style: {} };
             }
         }
 
         if (cellId === 'H3') { // Top Marker
             const p = getPlayerByPos('TOP');
             if (p) {
+                if (isReview) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
+                if (handIsEmpty(p.hand)) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
             }
         }
         if (cellId === 'B11') { // Left Marker & Count
             const p = getPlayerByPos('LEFT');
             if (p) {
+                if (isReview) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
-                if (typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
-                    return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
+                if (handIsEmpty(p.hand)) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
+                const count = getHandCount(p.hand);
+                if (count > 0 && count <= 10) {
+                    return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{count}张</span>, style: {} };
                 }
             }
         }
         if (cellId === 'N11') { // Right Marker & Count
             const p = getPlayerByPos('RIGHT');
             if (p) {
+                if (isReview) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
-                if (typeof p.hand === 'number' && p.hand > 0 && p.hand <= 10) {
-                    return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{p.hand}张</span>, style: {} };
+                if (handIsEmpty(p.hand)) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
+                const count = getHandCount(p.hand);
+                if (count > 0 && count <= 10) {
+                    return { content: <span className="text-red-600 font-bold text-xs w-full text-center block">{count}张</span>, style: {} };
                 }
             }
         }
         if (cellId === 'H20') { // Self Marker (Above Hand)
             const p = getPlayerByPos('SELF');
             if (p) {
+                if (isReview) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
                 if (!isPlaying) return { content: <span className="text-gray-400 text-xs w-full text-center block">(已就绪)</span>, style: {} };
-                if (p.hand.length === 0) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
+                if (handIsEmpty(p.hand)) return { content: <span className="text-gray-400 text-xs w-full text-center block">({getRankText(p)})</span>, style: {} };
             }
         }
 
