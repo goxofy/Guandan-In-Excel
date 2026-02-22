@@ -467,20 +467,15 @@ class GuandanLogic {
 
         // 2. If Free Turn (Lead)
         if (!lastHand) {
-            // Priority:
-            // 1. Smallest Single (if not part of larger structure)
-            // 2. Smallest Pair
-            // 3. Smallest Triplet
-            // 4. ...
-            // For MVP, just dump smallest available unit that isn't a bomb.
-
-            // Try Single
+            // Priority: clear cards efficiently
+            // Singles → Pairs → Straights → Full Houses → Tubes → Plates → Triplets → Bombs
             if (analysis.singles.length > 0) return analysis.singles[0];
-            // Try Pair
             if (analysis.pairs.length > 0) return analysis.pairs[0];
-            // Try Triplet
+            if (analysis.straights.length > 0) return analysis.straights[0];
+            if (analysis.fullHouses.length > 0) return analysis.fullHouses[0];
+            if (analysis.tubes.length > 0) return analysis.tubes[0];
+            if (analysis.plates.length > 0) return analysis.plates[0];
             if (analysis.triplets.length > 0) return analysis.triplets[0];
-            // Try Bomb (if nothing else)
             if (analysis.bombs.length > 0) return analysis.bombs[0];
 
             // Fallback: just play first card
@@ -503,22 +498,24 @@ class GuandanLogic {
         if (targetType === 'SINGLE') candidates = analysis.singles;
         else if (targetType === 'PAIR') candidates = analysis.pairs;
         else if (targetType === 'TRIPLET') candidates = analysis.triplets;
-        else if (targetType === 'BOMB') candidates = analysis.bombs; // Will need special filtering
-        else if (targetType === 'FULL_HOUSE') candidates = []; // TODO: Implement Full House finder
-        else if (targetType === 'STRAIGHT') candidates = []; // TODO: Implement Straight finder
-        // ... other types
+        else if (targetType === 'BOMB') candidates = analysis.bombs;
+        else if (targetType === 'FULL_HOUSE') candidates = analysis.fullHouses;
+        else if (targetType === 'STRAIGHT') candidates = analysis.straights;
+        else if (targetType === 'STRAIGHT_FLUSH') candidates = analysis.straightFlushes;
+        else if (targetType === 'TUBE') candidates = analysis.tubes;
+        else if (targetType === 'PLATE') candidates = analysis.plates;
 
         // Find smallest candidate that wins
         for (let cand of candidates) {
             if (beats(cand)) return cand;
         }
 
-        // If target is NOT a bomb, try to bomb it
-        if (targetType !== 'BOMB' && targetType !== 'KING_BOMB') {
+        // If target is NOT a bomb/special, try to bomb it
+        if (targetType !== 'BOMB' && targetType !== 'KING_BOMB' && targetType !== 'STRAIGHT_FLUSH') {
             for (let bomb of analysis.bombs) {
                 if (beats(bomb)) return bomb;
             }
-        } else if (targetType === 'BOMB') {
+        } else if (targetType === 'BOMB' || targetType === 'STRAIGHT_FLUSH') {
             // Try bigger bombs
             for (let bomb of analysis.bombs) {
                 if (beats(bomb)) return bomb;
@@ -565,23 +562,91 @@ class GuandanLogic {
             }
         }
 
-        // Second pass: Identify smaller units (ignoring cards used in bombs? No, allow breaking for now or just list all possibilities)
-        // For simple AI, let's list all disjoint possibilities.
-        // Actually, listing ALL valid singles/pairs is better.
-
+        // Second pass: Identify smaller units
         for (let val of sortedVals) {
             const cards = counts[val];
             if (cards.length === 1) singles.push(cards);
             if (cards.length === 2) pairs.push(cards);
             if (cards.length === 3) triplets.push(cards);
 
-            // Also allow breaking larger sets?
+            // Also allow breaking larger sets
             if (cards.length > 1) singles.push([cards[0]]);
             if (cards.length > 2) pairs.push(cards.slice(0, 2));
             if (cards.length > 3) triplets.push(cards.slice(0, 3));
         }
 
-        return { singles, pairs, triplets, bombs };
+        // Third pass: Find straights (5 consecutive values)
+        const straights = [];
+        const straightFlushes = [];
+        for (let val of sortedVals) {
+            let valid = true;
+            const straightCards = [];
+            for (let v = val; v < val + 5; v++) {
+                if (counts[v] && counts[v].length > 0) {
+                    straightCards.push(counts[v][0]);
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid && straightCards.length === 5) {
+                straights.push(straightCards);
+                // Check if all cards share the same suit (straight flush)
+                if (straightCards.every(c => c.suit === straightCards[0].suit)) {
+                    straightFlushes.push(straightCards);
+                }
+            }
+        }
+
+        // Fourth pass: Find full houses (triplet + pair, sorted by triplet rank ascending)
+        const fullHouses = [];
+        for (let tVal of sortedVals) {
+            if (counts[tVal].length >= 3) {
+                for (let pVal of sortedVals) {
+                    if (pVal !== tVal && counts[pVal].length >= 2) {
+                        fullHouses.push([...counts[tVal].slice(0, 3), ...counts[pVal].slice(0, 2)]);
+                    }
+                }
+            }
+        }
+
+        // Fifth pass: Find tubes (钢板 - 3 consecutive pairs)
+        const tubes = [];
+        for (let val of sortedVals) {
+            let valid = true;
+            const tubeCards = [];
+            for (let v = val; v < val + 3; v++) {
+                if (counts[v] && counts[v].length >= 2) {
+                    tubeCards.push(counts[v][0], counts[v][1]);
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid && tubeCards.length === 6) {
+                tubes.push(tubeCards);
+            }
+        }
+
+        // Sixth pass: Find plates (木板 - 2 consecutive triples)
+        const plates = [];
+        for (let val of sortedVals) {
+            let valid = true;
+            const plateCards = [];
+            for (let v = val; v < val + 2; v++) {
+                if (counts[v] && counts[v].length >= 3) {
+                    plateCards.push(counts[v][0], counts[v][1], counts[v][2]);
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid && plateCards.length === 6) {
+                plates.push(plateCards);
+            }
+        }
+
+        return { singles, pairs, triplets, bombs, straights, straightFlushes, fullHouses, tubes, plates };
     }
 
 

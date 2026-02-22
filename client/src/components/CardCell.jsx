@@ -4,8 +4,7 @@ import clsx from 'clsx';
 const CardCell = ({ card, selected, onClick }) => {
     if (!card) return null;
 
-    const isRed = card.suit === 'H' || card.suit === 'D' || card.suit === 'JOKER' && card.rank === 'BJ'; // Big Joker is Red usually? Or both Jokers colorful.
-    // Let's say BJ is Red, SJ is Black/Gray.
+    const isRed = card.suit === 'H' || card.suit === 'D' || (card.suit === 'JOKER' && card.rank === 'BJ');
 
     // Suit mapping
     const suitMap = {
