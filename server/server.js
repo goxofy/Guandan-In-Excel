@@ -357,21 +357,21 @@ io.on('connection', (socket) => {
         startGame(roomId);
     });
 
-    socket.on('playCards', ({ roomId, cardIndices }) => {
-        console.log(`[playCards] Event received from ${socket.id} for room ${roomId} with indices ${cardIndices}`);
-        handlePlayCards(roomId, socket.id, cardIndices);
+    socket.on('playCards', ({ roomId, cardIndices, cardIds }) => {
+        console.log(`[playCards] Event received from ${socket.id} for room ${roomId} with indices ${cardIndices}, ids ${cardIds}`);
+        handlePlayCards(roomId, socket.id, cardIndices, cardIds);
     });
 
     socket.on('passTurn', ({ roomId }) => {
         handlePassTurn(roomId, socket.id);
     });
 
-    socket.on('payTribute', ({ roomId, cardIndex }) => {
-        handlePayTribute(roomId, socket.id, cardIndex);
+    socket.on('payTribute', ({ roomId, cardIndex, cardId }) => {
+        handlePayTribute(roomId, socket.id, cardIndex, cardId);
     });
 
-    socket.on('returnCard', ({ roomId, cardIndex }) => {
-        handleReturnCard(roomId, socket.id, cardIndex);
+    socket.on('returnCard', ({ roomId, cardIndex, cardId }) => {
+        handleReturnCard(roomId, socket.id, cardIndex, cardId);
     });
 
     socket.on('leaveRoom', ({ roomId }) => {
@@ -536,8 +536,8 @@ function startGame(roomId) {
     broadcastGameState(room);
 }
 
-function handlePlayCards(roomId, playerId, cardIndices) {
-    console.log(`[handlePlayCards] Called for room ${roomId}, player ${playerId}, indices ${cardIndices}`);
+function handlePlayCards(roomId, playerId, cardIndices, cardIds) {
+    console.log(`[handlePlayCards] Called for room ${roomId}, player ${playerId}, indices ${cardIndices}, ids ${cardIds}`);
     const room = rooms.get(roomId);
     if (!room) {
         console.log(`[handlePlayCards] Room not found`);
@@ -562,14 +562,26 @@ function handlePlayCards(roomId, playerId, cardIndices) {
         return;
     }
 
+    // Resolve card IDs to indices if provided
+    const hand = player.hand;
+    let resolvedIndices;
+    if (cardIds && cardIds.length > 0) {
+        resolvedIndices = cardIds.map(id => hand.findIndex(c => c.id === id));
+        if (resolvedIndices.some(idx => idx === -1)) {
+            if (!player.isBot) io.to(playerId).emit('gameError', 'Invalid card selection');
+            return;
+        }
+    } else {
+        resolvedIndices = cardIndices;
+    }
+
     // Validate indices
-    if (!cardIndices || cardIndices.length === 0) return;
+    if (!resolvedIndices || resolvedIndices.length === 0) return;
 
     // Get actual cards
-    const hand = player.hand;
     const cardsToPlay = [];
     // Sort indices descending to remove from back
-    const sortedIndices = [...cardIndices].sort((a, b) => b - a);
+    const sortedIndices = [...resolvedIndices].sort((a, b) => b - a);
 
     for (let idx of sortedIndices) {
         if (idx < 0 || idx >= hand.length) {
@@ -822,7 +834,7 @@ function broadcastGameState(room) {
     });
 }
 
-function handlePayTribute(roomId, playerId, cardIndex) {
+function handlePayTribute(roomId, playerId, cardIndex, cardId) {
     const room = rooms.get(roomId);
     if (!room || room.gameState !== 'TRIBUTE') return;
 
@@ -834,6 +846,16 @@ function handlePayTribute(roomId, playerId, cardIndex) {
     }
     const action = room.tributePending[actionIndex];
     const fromPlayer = room.players.find(p => p.id === action.from);
+
+    // Resolve cardId to cardIndex if provided
+    if (cardId != null) {
+        cardIndex = fromPlayer.hand.findIndex(c => c.id === cardId);
+        if (cardIndex === -1) {
+            io.to(playerId).emit('gameError', 'Card not found');
+            return;
+        }
+    }
+
     const card = fromPlayer.hand[cardIndex];
 
     if (action.type === 'PAY' || action.type === 'PAY_DOUBLE') {
@@ -982,7 +1004,7 @@ function handlePayTribute(roomId, playerId, cardIndex) {
     broadcastGameState(room);
 }
 
-function handleReturnCard(roomId, playerId, cardIndex) {
+function handleReturnCard(roomId, playerId, cardIndex, cardId) {
     const room = rooms.get(roomId);
     if (!room || room.gameState !== 'TRIBUTE') return;
 
@@ -995,6 +1017,15 @@ function handleReturnCard(roomId, playerId, cardIndex) {
 
     const fromPlayer = room.players.find(p => p.id === action.from);
     const toPlayer = room.players.find(p => p.id === action.to);
+
+    // Resolve cardId to cardIndex if provided
+    if (cardId != null) {
+        cardIndex = fromPlayer.hand.findIndex(c => c.id === cardId);
+        if (cardIndex === -1) {
+            io.to(playerId).emit('gameError', 'Card not found');
+            return;
+        }
+    }
 
     const card = fromPlayer.hand[cardIndex];
 

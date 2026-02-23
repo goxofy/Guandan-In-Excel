@@ -86,11 +86,17 @@ function App() {
                 console.log('[App] Received players:', data.players.map(p => ({ id: p.id, handType: Array.isArray(p.hand) ? 'Array' : typeof p.hand, handLen: Array.isArray(p.hand) ? p.hand.length : p.hand })));
             }
             setGameState(data);
-            setMyHand(data.myHand);
-            // Only clear selection if hand changed (i.e. I played cards or new game)
+
+            // Only update myHand when the actual set of cards changed (preserves local sort order)
             const prevHand = myHandRef.current;
             const newHand = data.myHand;
-            if (JSON.stringify(prevHand) !== JSON.stringify(newHand)) {
+            const prevIds = new Set((prevHand || []).map(c => c.id));
+            const newIds = new Set((newHand || []).map(c => c.id));
+            const cardsChanged = prevIds.size !== newIds.size ||
+                [...newIds].some(id => !prevIds.has(id));
+
+            if (cardsChanged) {
+                setMyHand(newHand);
                 setSelectedCards([]);
             }
         });
@@ -146,12 +152,9 @@ function App() {
     const handlePlay = () => {
         if (selectedCards.length === 0) return;
 
-        // Convert indices to actual cards (optional, or let server handle indices)
-        // Sending indices is safer if state is synced, but sending cards is easier for stateless validation
-        // Let's send indices for now
-        socket.emit('playCards', { roomId, cardIndices: selectedCards });
-
-        // Optimistic update or wait for server? Wait for server 'cardsPlayed' event
+        // Send card IDs (not indices) for robustness with client-side sorting
+        const cardIds = selectedCards.map(idx => myHand[idx]?.id).filter(Boolean);
+        socket.emit('playCards', { roomId, cardIds });
     };
 
     const handlePass = () => {
@@ -164,12 +167,14 @@ function App() {
             // Check if it's my turn to pay/return
             const myAction = gameState.tributePending.find(a => a.from === socket.id);
             if (myAction) {
-                // arg is card index
+                // arg is card index in local myHand
                 if (typeof arg === 'number') {
+                    const cardId = myHand[arg]?.id;
+                    if (!cardId) return;
                     if (myAction.type === 'PAY' || myAction.type === 'PAY_DOUBLE') {
-                        socket.emit('payTribute', { roomId, cardIndex: arg });
+                        socket.emit('payTribute', { roomId, cardId });
                     } else {
-                        socket.emit('returnCard', { roomId, cardIndex: arg });
+                        socket.emit('returnCard', { roomId, cardId });
                     }
                 }
             }
@@ -207,9 +212,14 @@ function App() {
     };
 
     const handleSortHand = () => {
-        if (!myHand || myHand.length === 0) return;
+        console.log('[理牌] Button clicked. Hand length:', myHand?.length);
+        if (!myHand || myHand.length === 0) {
+            console.log('[理牌] No hand to sort, skipping');
+            return;
+        }
         const currentLevelRank = gameState?.currentLevelRank || '2';
         const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        const suitOrder = { 'S': 0, 'H': 1, 'C': 2, 'D': 3, 'JOKER': 4 };
 
         const getCardValue = (card) => {
             if (card.type === 'JOKER') return card.val; // 100 or 101
@@ -222,11 +232,13 @@ function App() {
         };
 
         const sorted = [...myHand].sort((a, b) => {
-            const valA = getCardValue(a);
-            const valB = getCardValue(b);
-            if (valA !== valB) return valB - valA;
-            return a.suit.localeCompare(b.suit);
+            // Sort by suit first, then by value descending within suit
+            const suitA = suitOrder[a.suit] ?? 5;
+            const suitB = suitOrder[b.suit] ?? 5;
+            if (suitA !== suitB) return suitA - suitB;
+            return getCardValue(b) - getCardValue(a);
         });
+        console.log('[理牌] Sort complete. Suits:', sorted.map(c => c.suit + c.rank).join(', '));
         setMyHand(sorted);
         setSelectedCards([]);
     };
