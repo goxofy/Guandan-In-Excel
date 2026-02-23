@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Ribbon from './components/Ribbon';
 import ExcelGrid from './components/ExcelGrid';
 import { io } from 'socket.io-client';
+import { defaultSort, comboSort } from './utils/handSorter';
 
 const socketUrl = import.meta.env.PROD ? '/' : 'http://localhost:3001';
 const socket = io(socketUrl);
@@ -11,6 +12,7 @@ function App() {
     const [gameState, setGameState] = useState(null);
     const [myHand, setMyHand] = useState([]);
     const [selectedCards, setSelectedCards] = useState([]);
+    const [sortMode, setSortMode] = useState('default');
     const [myPlayerId, setMyPlayerId] = useState(null);
     // Persistent Room ID
     const [roomId, setRoomId] = useState(() => {
@@ -98,6 +100,7 @@ function App() {
             if (cardsChanged) {
                 setMyHand(newHand);
                 setSelectedCards([]);
+                setSortMode('default');
             }
         });
 
@@ -212,34 +215,24 @@ function App() {
     };
 
     const handleSortHand = () => {
-        console.log('[理牌] Button clicked. Hand length:', myHand?.length);
+        console.log('[理牌] Button clicked. Hand length:', myHand?.length, 'Current mode:', sortMode);
         if (!myHand || myHand.length === 0) {
             console.log('[理牌] No hand to sort, skipping');
             return;
         }
         const currentLevelRank = gameState?.currentLevelRank || '2';
-        const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-        const suitOrder = { 'S': 0, 'H': 1, 'C': 2, 'D': 3, 'JOKER': 4 };
 
-        const getCardValue = (card) => {
-            if (card.type === 'JOKER') return card.val; // 100 or 101
-            const rankIndex = ranks.indexOf(card.rank);
-            const levelIndex = ranks.indexOf(currentLevelRank);
-            if (rankIndex === levelIndex) {
-                return card.suit === 'H' ? 200 : 99;
-            }
-            return card.rank === 'A' ? 14 : rankIndex + 2;
-        };
-
-        const sorted = [...myHand].sort((a, b) => {
-            // Sort by suit first, then by value descending within suit
-            const suitA = suitOrder[a.suit] ?? 5;
-            const suitB = suitOrder[b.suit] ?? 5;
-            if (suitA !== suitB) return suitA - suitB;
-            return getCardValue(b) - getCardValue(a);
-        });
-        console.log('[理牌] Sort complete. Suits:', sorted.map(c => c.suit + c.rank).join(', '));
-        setMyHand(sorted);
+        if (sortMode === 'default') {
+            const sorted = comboSort(myHand, currentLevelRank);
+            console.log('[理牌] Combo sort applied');
+            setMyHand(sorted);
+            setSortMode('combo');
+        } else {
+            const sorted = defaultSort(myHand, currentLevelRank);
+            console.log('[理牌] Default sort applied');
+            setMyHand(sorted);
+            setSortMode('default');
+        }
         setSelectedCards([]);
     };
 
@@ -272,7 +265,7 @@ function App() {
                 </div>
             </div>
 
-            <Ribbon onJoin={handleJoin} onStart={handleStart} onPlay={handlePlay} onSinglePlayer={handleSinglePlayer} onExit={handleExit} onSortHand={handleSortHand} />
+            <Ribbon onJoin={handleJoin} onStart={handleStart} onPlay={handlePlay} onSinglePlayer={handleSinglePlayer} onExit={handleExit} onSortHand={handleSortHand} sortMode={sortMode} />
 
             <div className="flex-1 overflow-auto relative">
                 <ExcelGrid
